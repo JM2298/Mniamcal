@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mniamcal - <%= title || 'Strona główna' %></title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <a href="/" class="navbar-brand">Mniamcal</a>
+            <div class="navbar-menu">
+                <% if (locals.user) { %>
+                    <a href="/dashboard" class="nav-link">Dashboard</a>
+                    <a href="/logout" class="nav-link">Wyloguj</a>
+                <% } else { %>
+                    <a href="/login" class="nav-link">Zaloguj</a>
+                    <a href="/register" class="nav-link nav-link-highlight">Zarejestruj</a>
+                <% } %>
+            </div>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="container">
+            <% if (locals.error) { %>
+                <div class="alert alert-error">
+                    <%= error %>
+                </div>
+            <% } %>
+            
+            <% if (locals.success) { %>
+                <div class="alert alert-success">
+                    <%= success %>
+                </div>
+            <% } %>
+            
+            <%- body %>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 Mniamcal. Wszelkie prawa zastrzeżone.</p>
+        </div>
+    </footer>
+</body>
+</html>

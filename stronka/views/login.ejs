@@ -1,0 +1,43 @@
+<% layout('layout') %>
+<% title = 'Logowanie' %>
+
+<div class="auth-container">
+    <div class="auth-card">
+        <h1 class="auth-title">Zaloguj się</h1>
+        <p class="auth-subtitle">Wprowadź swoje dane, aby kontynuować</p>
+        
+        <form action="/login" method="POST" class="auth-form">
+            <div class="form-group">
+                <label for="username" class="form-label">Nazwa użytkownika</label>
+                <input type="text" id="username" name="username" class="form-input" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password" class="form-label">Hasło</label>
+                <input type="password" id="password" name="password" class="form-input" required>
+            </div>
+            
+            <button type="submit" class="btn btn-primary btn-block">Zaloguj się</button>
+        </form>
+        
+        <!-- Miejsce na logowanie przez Google/Firebase (do zaimplementowania) -->
+        <div class="auth-divider">
+            <span>lub</span>
+        </div>
+        
+        <button class="btn btn-google btn-block" onclick="loginWithGoogle()">
+            <span class="google-icon">G</span>
+            Kontynuuj z Google
+        </button>
+        
+        <div class="auth-footer">
+            Nie masz konta? <a href="/register">Zarejestruj się</a>
+        </div>
+    </div>
+</div>
+
+<script>
+function loginWithGoogle() {
+    alert('Logowanie przez Google będzie dostępne wkrótce!');
+}
+</script>
