@@ -1,0 +1,38 @@
+<div style="padding: 2rem 0;">
+    <div class="dashboard-header">
+        <h1>Lista Diet</h1>
+        <p class="dashboard-subtitle">Poznaj dostępne plany żywieniowe</p>
+    </div>
+
+    <% if (error) { %>
+        <div class="alert alert-error"><%= error %></div>
+    <% } %>
+
+    <% if (diets && diets.length > 0) { %>
+        <div class="diets-grid">
+            <% diets.forEach(diet => { %>
+                <div class="diet-card">
+                    <h3><%= diet.dieta %></h3>
+                    <% if (diet.opis_diety) { %>
+                        <p class="diet-description"><%= diet.opis_diety %></p>
+                    <% } %>
+                    <div style="margin-top: 1.5rem;">
+                        <% if (isAuthenticated) { %>
+                            <a href="#" class="btn btn-primary btn-block" onclick="return false;">Wybierz tę dietę</a>
+                        <% } else { %>
+                            <a href="/login" class="btn btn-primary btn-block">Zaloguj się aby wybrać</a>
+                        <% } %>
+                    </div>
+                </div>
+            <% }); %>
+        </div>
+    <% } else { %>
+        <div class="alert alert-error" style="text-align: center;">
+            <p>Brak dostępnych diet</p>
+        </div>
+    <% } %>
+
+    <div style="margin-top: 2rem; text-align: center;">
+        <a href="/" class="btn btn-outline">← Powrót do strony głównej</a>
+    </div>
+</div>
