@@ -124,12 +124,24 @@ app.get('/', (req, res) => {
 
 app.get('/diets', async (req, res) => {
     try {
-        const response = await apiClient.get('/api/diets/');
-        const diets = response.data.results || response.data;
+        const dietsResponse = await apiClient.get('/api/diets/');
+        const diets = dietsResponse.data.results || dietsResponse.data;
+        
+        const caloriesResponse = await apiClient.get('/api/diets/calories/');
+        const calories = caloriesResponse.data.results || caloriesResponse.data || [];
+        
+        // Mapuj kaloryczności do diet
+        const dietsWithCalories = diets.map(diet => {
+            const dietCalories = calories.filter(cal => cal.dieta_id === diet.id);
+            return {
+                ...diet,
+                calories: dietCalories
+            };
+        });
         
         res.render('diets', { 
             title: 'Lista Diet',
-            diets: diets,
+            diets: dietsWithCalories,
             isAuthenticated: !!req.auth?.accessToken
         });
     } catch (error) {

@@ -505,6 +505,24 @@ body {
     line-height: 1.5;
 }
 
+.calories-section {
+    background: #f0f7f0;
+    border-left: 4px solid var(--primary-color);
+    padding: 0.75rem;
+    border-radius: 6px;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+}
+
+.calories-section p {
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.calories-section ul li {
+    color: var(--text-secondary);
+}
+
 .btn-block {
     display: block;
     width: 100%;

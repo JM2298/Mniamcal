@@ -16,6 +16,20 @@
                     <% if (diet.opis_diety) { %>
                         <p class="diet-description"><%= diet.opis_diety %></p>
                     <% } %>
+                    
+                    <% if (diet.calories && diet.calories.length > 0) { %>
+                        <div class="calories-section">
+                            <p style="font-weight: 500; margin-bottom: 0.5rem;">Dostępne kaloryczności:</p>
+                            <ul style="list-style: none; padding: 0;">
+                                <% diet.calories.forEach(cal => { %>
+                                    <li style="padding: 0.25rem 0; font-size: 0.9rem;">
+                                        • <%= cal.kalorycznosc || (cal.czysta_kalorycznosc ? cal.czysta_kalorycznosc + ' kcal' : 'N/A') %>
+                                    </li>
+                                <% }); %>
+                            </ul>
+                        </div>
+                    <% } %>
+                    
                     <div style="margin-top: 1.5rem;">
                         <% if (isAuthenticated) { %>
                             <a href="#" class="btn btn-primary btn-block" onclick="return false;">Wybierz tę dietę</a>
