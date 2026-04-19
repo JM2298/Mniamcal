@@ -124,24 +124,135 @@ app.get('/', (req, res) => {
 
 app.get('/diets', async (req, res) => {
     try {
+        const selectedDietId = parseInt(req.query.diet_id) || null;
+        const selectedCaloriesId = parseInt(req.query.calories_id) || null;
+        const mealsPage = parseInt(req.query.page) || 1;
+        
         const dietsResponse = await apiClient.get('/api/diets/');
         const diets = dietsResponse.data.results || dietsResponse.data;
         
-        const caloriesResponse = await apiClient.get('/api/diets/calories/');
-        const calories = caloriesResponse.data.results || caloriesResponse.data || [];
+        // Pobierz wszystkie kaloryczności (z paginacją)
+        let calories = [];
+        let caloriesPage = 1;
+        let hasMoreCalories = true;
         
-        // Mapuj kaloryczności do diet
-        const dietsWithCalories = diets.map(diet => {
-            const dietCalories = calories.filter(cal => cal.dieta_id === diet.id);
-            return {
-                ...diet,
-                calories: dietCalories
-            };
-        });
+        while (hasMoreCalories) {
+            try {
+                const caloriesResponse = await apiClient.get(`/api/diets/calories/?page=${caloriesPage}`);
+                const pageCalories = caloriesResponse.data.results || [];
+                calories = calories.concat(pageCalories);
+                hasMoreCalories = !!caloriesResponse.data.next;
+                caloriesPage++;
+            } catch (error) {
+                console.error(`Error fetching calories page ${caloriesPage}:`, error.message);
+                hasMoreCalories = false;
+            }
+        }
+        
+        console.log(`Pobrano łącznie ${calories.length} kaloryczności`);
+        
+        let dietsWithData = [];
+        let selectedDietData = null;
+        
+        // Jeśli wybrana jest konkretna dieta, pobierz jej posiłki z paginacją
+        if (selectedDietId) {
+            const selectedDiet = diets.find(d => d.id === selectedDietId);
+            if (selectedDiet) {
+                try {
+                    // Jeśli wybrana kaloryczność, filtruj po niej
+                    let mealsUrl = `/api/diets/meals/?dieta-id=${selectedDietId}&page=${mealsPage}`;
+                    if (selectedCaloriesId) {
+                        mealsUrl += `&kalorycznosc-id=${selectedCaloriesId}`;
+                    }
+                    
+                    const mealsResponse = await apiClient.get(mealsUrl);
+                    const dietMeals = mealsResponse.data.results || [];
+                    const hasNextPage = !!mealsResponse.data.next;
+                    const hasPreviousPage = !!mealsResponse.data.previous;
+                    
+                    const dietCalories = calories.filter(cal => cal.dieta_id === selectedDietId);
+                    
+                    selectedDietData = {
+                        ...selectedDiet,
+                        calories: dietCalories,
+                        meals: dietMeals,
+                        currentPage: mealsPage,
+                        hasNextPage,
+                        hasPreviousPage,
+                        nextPage: mealsPage + 1,
+                        previousPage: mealsPage - 1,
+                        selectedCaloriesId
+                    };
+                    
+                    const caloriesText = selectedCaloriesId ? ` (kaloryczność id=${selectedCaloriesId})` : '';
+                    console.log(`Dieta "${selectedDiet.dieta}" (id=${selectedDietId})${caloriesText}, strona ${mealsPage}: ${dietMeals.length} posiłków`);
+                } catch (error) {
+                    console.error(`Error fetching meals for diet ${selectedDietId}:`, error.message);
+                }
+            }
+        }
+        
+        // Pobierz pierwsze strony dla każdej diety (dla sidebar)
+        dietsWithData = await Promise.all(
+            diets.map(async (diet) => {
+                try {
+                    const dietCalories = calories.filter(cal => cal.dieta_id === diet.id);
+                    
+                    // Pobierz posiłki TYLKO dla tej diety (strona 1)
+                    const mealsResponse = await apiClient.get(`/api/diets/meals/?dieta-id=${diet.id}&page=1`);
+                    const dietMeals = mealsResponse.data.results || [];
+                    
+                    return {
+                        ...diet,
+                        calories: dietCalories,
+                        meals: dietMeals
+                    };
+                } catch (error) {
+                    console.error(`Error fetching meals for diet ${diet.id}:`, error.message);
+                    return {
+                        ...diet,
+                        calories: [],
+                        meals: []
+                    };
+                }
+            })
+        );
+        
+        // Jeśli nic nie zostało wybrane, wybierz pierwsze
+        if (!selectedDietData && dietsWithData.length > 0) {
+            const firstDiet = diets[0];
+            try {
+                const mealsResponse = await apiClient.get(`/api/diets/meals/?dieta-id=${firstDiet.id}&page=1`);
+                const dietMeals = mealsResponse.data.results || [];
+                const dietCalories = calories.filter(cal => cal.dieta_id === firstDiet.id);
+                
+                selectedDietData = {
+                    ...firstDiet,
+                    calories: dietCalories,
+                    meals: dietMeals,
+                    currentPage: 1,
+                    hasNextPage: !!mealsResponse.data.next,
+                    hasPreviousPage: false,
+                    nextPage: 2,
+                    previousPage: 0
+                };
+                console.log(`Dieta "${firstDiet.dieta}" (domyślna), strona 1: ${dietMeals.length} posiłków`);
+            } catch (error) {
+                console.error(`Error fetching meals for default diet ${firstDiet.id}:`, error.message);
+                const firstDietFromData = dietsWithData[0];
+                selectedDietData = {
+                    ...firstDietFromData,
+                    currentPage: 1,
+                    hasNextPage: false,
+                    hasPreviousPage: false
+                };
+            }
+        }
         
         res.render('diets', { 
             title: 'Lista Diet',
-            diets: dietsWithCalories,
+            diets: dietsWithData,
+            selectedDiet: selectedDietData,
             isAuthenticated: !!req.auth?.accessToken
         });
     } catch (error) {
@@ -150,6 +261,7 @@ app.get('/diets', async (req, res) => {
         res.render('diets', { 
             title: 'Lista Diet',
             diets: [],
+            selectedDiet: null,
             isAuthenticated: !!req.auth?.accessToken,
             error: 'Nie udało się wczytać listy diet'
         });

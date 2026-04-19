@@ -1,7 +1,7 @@
 <div style="padding: 2rem 0;">
     <div class="dashboard-header">
-        <h1>Lista Diet</h1>
-        <p class="dashboard-subtitle">Poznaj dostępne plany żywieniowe</p>
+        <h1>Diety i Posiłki</h1>
+        <p class="dashboard-subtitle">Wybierz dietę i przeglądaj dostępne posiłki</p>
     </div>
 
     <% if (error) { %>
@@ -9,36 +9,127 @@
     <% } %>
 
     <% if (diets && diets.length > 0) { %>
-        <div class="diets-grid">
-            <% diets.forEach(diet => { %>
-                <div class="diet-card">
-                    <h3><%= diet.dieta %></h3>
-                    <% if (diet.opis_diety) { %>
-                        <p class="diet-description"><%= diet.opis_diety %></p>
-                    <% } %>
-                    
-                    <% if (diet.calories && diet.calories.length > 0) { %>
-                        <div class="calories-section">
-                            <p style="font-weight: 500; margin-bottom: 0.5rem;">Dostępne kaloryczności:</p>
-                            <ul style="list-style: none; padding: 0;">
-                                <% diet.calories.forEach(cal => { %>
-                                    <li style="padding: 0.25rem 0; font-size: 0.9rem;">
-                                        • <%= cal.kalorycznosc || (cal.czysta_kalorycznosc ? cal.czysta_kalorycznosc + ' kcal' : 'N/A') %>
-                                    </li>
-                                <% }); %>
-                            </ul>
-                        </div>
-                    <% } %>
-                    
-                    <div style="margin-top: 1.5rem;">
-                        <% if (isAuthenticated) { %>
-                            <a href="#" class="btn btn-primary btn-block" onclick="return false;">Wybierz tę dietę</a>
-                        <% } else { %>
-                            <a href="/login" class="btn btn-primary btn-block">Zaloguj się aby wybrać</a>
-                        <% } %>
-                    </div>
+        <div class="diets-container">
+            <!-- Sidebar z listą diet -->
+            <aside class="diets-sidebar">
+                <div class="diets-sidebar-header">
+                    <h3>Diety</h3>
                 </div>
-            <% }); %>
+                <div class="diets-list">
+                    <% diets.forEach((diet) => { %>
+                        <a 
+                            href="/diets?diet_id=<%= diet.id %>&page=1"
+                            class="diet-item <%= selectedDiet && selectedDiet.id === diet.id ? 'active' : '' %>"
+                            data-diet-id="<%= diet.id %>"
+                        >
+                            <div class="diet-item-name"><%= diet.dieta %></div>
+                        </a>
+                    <% }); %>
+                </div>
+            </aside>
+
+            <!-- Główny obszar z posiłkami -->
+            <main class="diets-main">
+                <% if (selectedDiet && selectedDiet.meals && selectedDiet.meals.length > 0) { %>
+                    <div class="diet-content active">
+                        <div class="diet-header">
+                            <h2><%= selectedDiet.dieta %></h2>
+                            <% if (selectedDiet.opis_diety) { %>
+                                <p class="diet-description"><%= selectedDiet.opis_diety %></p>
+                            <% } %>
+                            
+                            <% if (selectedDiet.calories && selectedDiet.calories.length > 0) { %>
+                                <div class="calories-section">
+                                    <p style="font-weight: 500; margin-bottom: 0.5rem;">Dostępne kaloryczności:</p>
+                                    <div class="calories-list">
+                                        <% selectedDiet.calories.forEach(cal => { %>
+                                            <a 
+                                                href="/diets?diet_id=<%= selectedDiet.id %>&calories_id=<%= cal.id %>&page=1"
+                                                class="calorie-badge <%= selectedDiet.selectedCaloriesId === cal.id ? 'active' : '' %>"
+                                            >
+                                                <%= cal.kalorycznosc || (cal.czysta_kalorycznosc ? cal.czysta_kalorycznosc + ' kcal' : 'N/A') %>
+                                            </a>
+                                        <% }); %>
+                                    </div>
+                                </div>
+                            <% } %>
+                        </div>
+
+                        <div class="meals-section">
+                            <h3>Posiłki w diecie</h3>
+                            <div class="meals-grid">
+                                <% selectedDiet.meals.forEach(meal => { %>
+                                        <div class="meal-card">
+                                            <% if (meal.zdjecie_url) { %>
+                                                <img 
+                                                    src="<%= meal.zdjecie_url %>" 
+                                                    alt="<%= meal.nazwa_posilku %>"
+                                                    class="meal-image"
+                                                    loading="lazy"
+                                                    onerror="this.style.display='none'"
+                                                />
+                                            <% } else { %>
+                                                <div class="meal-image-placeholder">
+                                                    <span>Brak zdjęcia</span>
+                                                </div>
+                                            <% } %>
+                                            <h4><%= meal.nazwa_posilku %></h4>
+                                            <p class="meal-meta">
+                                                <span class="meal-tag"><%= meal.pora_posilku || 'Brak czasu' %></span>
+                                            </p>
+                                            <% if (meal.czas_przygotowania) { %>
+                                                <p class="meal-detail">⏱️ <%= meal.czas_przygotowania %></p>
+                                            <% } %>
+                                            <% if (meal.kalorie) { %>
+                                                <p class="meal-detail">🔥 <%= meal.kalorie %> kcal</p>
+                                            <% } %>
+                                            <% if (meal.cena_posilku) { %>
+                                                <p class="meal-detail">💰 <%= meal.cena_posilku %></p>
+                                            <% } %>
+                                        <% if (meal.opis_posilku) { %>
+                                            <p class="meal-description"><%= meal.opis_posilku %></p>
+                                        <% } %>
+                                        <button 
+                                            type="button" 
+                                            class="btn btn-outline btn-sm meal-detail-btn"
+                                            data-meal='<%= JSON.stringify({
+                                                id: meal.id,
+                                                nazwa_posilku: meal.nazwa_posilku,
+                                                pora_posilku: meal.pora_posilku,
+                                                czas_przygotowania: meal.czas_przygotowania,
+                                                kalorie: meal.kalorie,
+                                                bialko: meal.bialko,
+                                                weglowodany: meal.weglowodany,
+                                                tluszcze: meal.tluszcze,
+                                                cena_posilku: meal.cena_posilku,
+                                                opis_posilku: meal.opis_posilku,
+                                                skladniki: meal.skladniki,
+                                                zdjecie_url: meal.zdjecie_url
+                                            }) %>'
+                                        >Szczegóły</button>
+                                        </div>
+                                    <% }); %>
+                                    </div>
+                            </div>
+
+                            <!-- Przyciski paginacji -->
+                            <div class="pagination-controls" style="margin-top: 2rem; display: flex; gap: 1rem; justify-content: center;">
+                                <% if (selectedDiet.hasPreviousPage) { %>
+                                    <a href="/diets?diet_id=<%= selectedDiet.id %>&page=<%= selectedDiet.previousPage %>" class="btn btn-outline">← Poprzednia strona</a>
+                                <% } %>
+                                <span style="padding: 0.5rem 1rem; display: flex; align-items: center;">Strona <%= selectedDiet.currentPage %></span>
+                                <% if (selectedDiet.hasNextPage) { %>
+                                    <a href="/diets?diet_id=<%= selectedDiet.id %>&page=<%= selectedDiet.nextPage %>" class="btn btn-outline">Następna strona →</a>
+                                <% } %>
+                            </div>
+                        </div>
+                    </div>
+                <% } else if (selectedDiet) { %>
+                    <p class="no-meals">Brak posiłków w tej diecie</p>
+                <% } else { %>
+                    <p class="no-meals">Wybierz dietę z listy po lewej</p>
+                <% } %>
+            </main>
         </div>
     <% } else { %>
         <div class="alert alert-error" style="text-align: center;">
@@ -50,3 +141,129 @@
         <a href="/" class="btn btn-outline">← Powrót do strony głównej</a>
     </div>
 </div>
+
+<script>
+    // Event delegation dla guzików szczegółów
+    document.addEventListener('click', function(e) {
+        if (e.target.classList.contains('meal-detail-btn')) {
+            const mealData = e.target.getAttribute('data-meal');
+            if (mealData) {
+                const meal = JSON.parse(mealData);
+                openMealDetails(meal);
+            }
+        }
+    });
+
+    function openMealDetails(meal) {
+        const modal = document.getElementById('mealDetailsModal');
+        document.getElementById('modalMealName').textContent = meal.nazwa_posilku;
+        document.getElementById('modalMealTime').textContent = meal.pora_posilku || 'Brak czasu';
+        document.getElementById('modalMealPrep').textContent = meal.czas_przygotowania || 'Brak danych';
+        document.getElementById('modalMealCalories').textContent = meal.kalorie || 'N/A';
+        document.getElementById('modalMealProtein').textContent = meal.bialko || 'N/A';
+        document.getElementById('modalMealCarbs').textContent = meal.weglowodany || 'N/A';
+        document.getElementById('modalMealFats').textContent = meal.tluszcze || 'N/A';
+        document.getElementById('modalMealPrice').textContent = meal.cena_posilku || 'N/A';
+        document.getElementById('modalMealDescription').textContent = meal.opis_posilku || 'Brak opisu';
+        document.getElementById('modalMealIngredients').textContent = meal.skladniki || 'Brak danych o składnikach';
+        
+        // Ustaw obrazek
+        const mealImageElement = document.getElementById('modalMealImage');
+        const mealImagePlaceholder = document.getElementById('modalMealImagePlaceholder');
+        if (meal.zdjecie_url) {
+            mealImageElement.src = meal.zdjecie_url;
+            mealImageElement.style.display = 'block';
+            mealImagePlaceholder.style.display = 'none';
+        } else {
+            mealImageElement.style.display = 'none';
+            mealImagePlaceholder.style.display = 'flex';
+        }
+        
+        modal.style.display = 'block';
+    }
+
+    function closeMealDetails() {
+        const modal = document.getElementById('mealDetailsModal');
+        modal.style.display = 'none';
+    }
+
+    window.onclick = function(event) {
+        const modal = document.getElementById('mealDetailsModal');
+        if (event.target == modal) {
+            modal.style.display = 'none';
+        }
+    }
+</script>
+
+<!-- Modal ze szczegółami posiłku -->
+<div id="mealDetailsModal" class="modal">
+    <div class="modal-content meal-modal-content">
+        <span class="close" onclick="closeMealDetails()">&times;</span>
+        
+        <div class="modal-meal-image">
+            <img 
+                id="modalMealImage" 
+                src="" 
+                alt="Posiłek"
+                class="meal-image-large"
+            />
+            <div id="modalMealImagePlaceholder" class="meal-image-placeholder-large">
+                <span>Brak zdjęcia</span>
+            </div>
+        </div>
+        
+        <h2 id="modalMealName"></h2>
+        
+        <div class="meal-details-grid">
+            <div class="detail-item">
+                <span class="detail-label">Pora dnia:</span>
+                <span class="detail-value" id="modalMealTime"></span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Czas przygotowania:</span>
+                <span class="detail-value" id="modalMealPrep"></span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Kalorie:</span>
+                <span class="detail-value" id="modalMealCalories"></span>
+            </div>
+            <div class="detail-item">
+                <span class="detail-label">Cena:</span>
+                <span class="detail-value" id="modalMealPrice"></span>
+            </div>
+        </div>
+
+        <div class="nutrition-grid">
+            <div class="nutrition-item">
+                <div class="nutrition-label">Białko</div>
+                <div class="nutrition-value" id="modalMealProtein">N/A</div>
+                <div class="nutrition-unit">g</div>
+            </div>
+            <div class="nutrition-item">
+                <div class="nutrition-label">Węglowodany</div>
+                <div class="nutrition-value" id="modalMealCarbs">N/A</div>
+                <div class="nutrition-unit">g</div>
+            </div>
+            <div class="nutrition-item">
+                <div class="nutrition-label">Tłuszcze</div>
+                <div class="nutrition-value" id="modalMealFats">N/A</div>
+                <div class="nutrition-unit">g</div>
+            </div>
+        </div>
+
+        <div class="meal-section">
+            <h4>Opis</h4>
+            <p id="modalMealDescription"></p>
+        </div>
+
+        <div class="meal-section">
+            <h4>Składniki</h4>
+            <p id="modalMealIngredients"></p>
+        </div>
+
+        <div style="margin-top: 1.5rem;">
+            <button type="button" class="btn btn-primary btn-block" onclick="closeMealDetails()">Zamknij</button>
+        </div>
+    </div>
+</div>
+
