@@ -1,0 +1,174 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: django_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  db:
+    image: postgres:16
+    container_name: django_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mydb}
+      POSTGRES_USER: ${POSTGRES_USER:-myuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mypassword}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backup.sql:/docker-entrypoint-initdb.d/00_backup.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-myuser} -d ${POSTGRES_DB:-mydb}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  web:
+    build:
+      context: ./dieta_studencka
+    container_name: django_web
+    restart: unless-stopped
+    entrypoint: ["/app/entrypoint.sh"]
+    command:
+      [
+        "uvicorn",
+        "dieta_studencka.asgi:application",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--ws",
+        "websockets",
+        "--reload"
+      ]
+    volumes:
+      - ./dieta_studencka:/app
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - ./.env.backend
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/', timeout=2).status < 500 else 1)\"",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+
+  celery_worker:
+    build:
+      context: ./dieta_studencka
+    container_name: django_celery_worker
+    restart: unless-stopped
+    command: ["celery", "-A", "dieta_studencka", "worker", "-l", "info"]
+    volumes:
+      - ./dieta_studencka:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    env_file:
+      - ./.env.backend
+
+  celery_beat:
+    build:
+      context: ./dieta_studencka
+    container_name: django_celery_beat
+    restart: unless-stopped
+    command: ["celery", "-A", "dieta_studencka", "beat", "-l", "info"]
+    volumes:
+      - ./dieta_studencka:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    env_file:
+      - ./.env.backend
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: django_nginx
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+      
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./dieta_studencka/staticfiles:/app/staticfiles:ro
+      - ./dieta_studencka/media:/app/media:ro
+
+  
+  node:
+    image: node:22-alpine
+    container_name: django_node
+    restart: unless-stopped
+    profiles:
+      - frontend
+    working_dir: /workspace/webapp2
+    command:
+      [
+        "sh",
+        "-c",
+        "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm ci; fi; npm run build && npm run start -- --hostname 0.0.0.0 --port 3000"
+      ]
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./webapp2:/workspace/webapp2
+      - webapp_node_modules:/workspace/webapp2/node_modules
+    
+    depends_on:
+      web:
+        condition: service_healthy
+
+  stronka:
+
+    image: node:22-alpine
+    container_name: stronka_node
+    restart: unless-stopped
+    profiles:
+      - stronka
+    working_dir: /workspace/stronka
+    command:
+      [
+        "sh",
+        "-c",
+        "if [ ! -d node_modules ] || [ -z \"$(ls -A node_modules 2>/dev/null)\" ]; then npm ci; fi; npm run start"
+      ]
+    environment:
+      PORT: 5001
+      API_BASE_URL: http://web:8000
+
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./stronka:/workspace/stronka
+      - stronka_node_modules:/workspace/stronka/node_modules
+    
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:5001/ >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+      
+volumes:
+  postgres_data:
+  webapp_node_modules:
+  stronka_node_modules:

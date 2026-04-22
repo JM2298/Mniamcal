@@ -1,0 +1,24 @@
+﻿<div class="auth-container">
+    <div class="auth-card">
+        <h1 class="auth-title">Zaloguj sie</h1>
+        <p class="auth-subtitle">Wprowadz swoje dane, aby kontynuowac</p>
+
+        <form action="/login" method="POST" class="auth-form">
+            <div class="form-group">
+                <label for="username" class="form-label">Nazwa uzytkownika</label>
+                <input type="text" id="username" name="username" class="form-input" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password" class="form-label">Haslo</label>
+                <input type="password" id="password" name="password" class="form-input" required>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block">Zaloguj sie</button>
+        </form>
+
+        <div class="auth-footer">
+            Nie masz konta? <a href="/register">Zarejestruj sie</a>
+        </div>
+    </div>
+</div>

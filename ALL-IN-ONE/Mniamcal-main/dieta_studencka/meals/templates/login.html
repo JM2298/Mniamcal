@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Logowanie Firebase</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #e2e8f0;
+      --accent: #0f766e;
+      --accent-hover: #115e59;
+      --danger: #b91c1c;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: radial-gradient(circle at top right, #ccfbf1 0, transparent 42%), var(--bg);
+      color: var(--text);
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .card {
+      width: min(720px, 100%);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 8px 28px rgba(15, 23, 42, 0.08);
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.5rem;
+    }
+
+    p {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    label {
+      font-size: 0.9rem;
+      font-weight: 600;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.95rem;
+      color: var(--text);
+      background: #fff;
+    }
+
+    .actions {
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 16px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .secondary {
+      background: #e2e8f0;
+      color: #0f172a;
+    }
+
+    pre {
+      margin-top: 14px;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      overflow: auto;
+      min-height: 110px;
+      font-size: 0.86rem;
+    }
+
+    .error {
+      color: var(--danger);
+      font-weight: 600;
+      margin-top: 8px;
+      min-height: 1.2rem;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Logowanie Firebase -> Django JWT</h1>
+    <p>Uzupelnij konfiguracje Firebase Web App, zaloguj przez Google i wyslij Firebase ID token do backendu.</p>
+
+    <section class="grid">
+      <div>
+        <label for="apiKey">Firebase apiKey</label>
+        <input id="apiKey" placeholder="AIza...">
+      </div>
+      <div>
+        <label for="authDomain">Firebase authDomain</label>
+        <input id="authDomain" placeholder="twoj-projekt.firebaseapp.com">
+      </div>
+      <div>
+        <label for="projectId">Firebase projectId</label>
+        <input id="projectId" placeholder="twoj-projekt-id">
+      </div>
+      <div>
+        <label for="appId">Firebase appId</label>
+        <input id="appId" placeholder="1:1234567890:web:abcdef...">
+      </div>
+      <div>
+        <label for="backendUrl">Backend URL</label>
+        <input id="backendUrl" value="/api/auth/login/firebase/">
+      </div>
+    </section>
+
+    <div class="actions">
+      <button class="primary" id="loginButton" type="button">Zaloguj Google i pobierz JWT</button>
+      <button class="secondary" id="clearButton" type="button">Wyczysc wynik</button>
+    </div>
+
+    <div class="error" id="errorBox"></div>
+    <pre id="resultBox">Tutaj pojawi sie odpowiedz backendu.</pre>
+  </main>
+
+  <script type="module">
+    import { getApps, initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+    import { getAuth, GoogleAuthProvider, signInWithPopup } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+  let firebaseAuth = null;
+
+
+    const resultBox = document.getElementById('resultBox');
+    const errorBox = document.getElementById('errorBox');
+
+    function setResult(value) {
+      resultBox.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    }
+
+    function clearError() {
+      errorBox.textContent = '';
+    }
+
+    function setError(message) {
+      errorBox.textContent = message;
+    }
+
+    function getConfig() {
+      return {
+        apiKey: document.getElementById('apiKey').value.trim(),
+        authDomain: document.getElementById('authDomain').value.trim(),
+        projectId: document.getElementById('projectId').value.trim(),
+        appId: document.getElementById('appId').value.trim()
+      };
+    }
+
+    async function loginAndExchangeToken() {
+      clearError();
+      setResult('Logowanie...');
+
+      const config = getConfig();
+      if (!config.apiKey || !config.authDomain || !config.projectId || !config.appId) {
+        setError('Uzupelnij wszystkie pola konfiguracji Firebase.');
+        setResult('Brak danych konfiguracyjnych.');
+        return;
+      }
+
+      try {
+        if (!firebaseAuth) {
+          const app = getApps().find((item) => item.name === 'login-page-app') || initializeApp(config, 'login-page-app');
+          firebaseAuth = getAuth(app);
+        }
+        const provider = new GoogleAuthProvider();
+
+        const credential = await signInWithPopup(firebaseAuth, provider);
+        const idToken = await credential.user.getIdToken();
+
+        const endpoint = document.getElementById('backendUrl').value.trim() || '/api/auth/login/firebase/';
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id_token: idToken })
+        });
+
+        const payload = await response.json();
+        setResult(payload);
+
+        if (!response.ok) {
+          setError('Backend zwrocil blad HTTP ' + response.status + '.');
+          return;
+        }
+
+        clearError();
+      } catch (error) {
+        setError(error?.message || 'Nieznany blad logowania Firebase.');
+        setResult(String(error));
+      }
+    }
+
+    document.getElementById('loginButton').addEventListener('click', loginAndExchangeToken);
+    document.getElementById('clearButton').addEventListener('click', () => {
+      clearError();
+      setResult('Tutaj pojawi sie odpowiedz backendu.');
+    });
+  </script>
+</body>
+</html>

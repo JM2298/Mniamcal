@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Usuniecie konta - Dieta Studencka</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #e2e8f0;
+      --primary: #0f766e;
+      --primary-hover: #0d5f59;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: radial-gradient(circle at top right, #ccfbf1 0, transparent 42%), var(--bg);
+      color: var(--text);
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    .container {
+      width: min(920px, 100%);
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 8px 28px rgba(15, 23, 42, 0.08);
+      padding: 24px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.8rem;
+      line-height: 1.2;
+    }
+
+    .lead {
+      margin-top: 10px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    section {
+      margin-top: 24px;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: 1.15rem;
+    }
+
+    p,
+    li {
+      margin: 0;
+      line-height: 1.6;
+      color: #1e293b;
+    }
+
+    ul {
+      margin: 8px 0 0;
+      padding-left: 20px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .cta {
+      margin-top: 14px;
+      display: inline-block;
+      text-decoration: none;
+      background: var(--primary);
+      color: #ffffff;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-weight: 600;
+    }
+
+    .cta:hover {
+      background: var(--primary-hover);
+    }
+
+    code {
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 2px 6px;
+    }
+
+    .meta {
+      margin-top: 24px;
+      font-size: 0.92rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>Zgloszenie usuniecia konta i danych</h1>
+    <p class="lead">
+      Na tej stronie mozna poprosic o usuniecie konta oraz powiazanych z nim danych
+      w aplikacji Dieta Studencka.
+    </p>
+
+    <section>
+      <h2>1. Jak zlozyc prosbe</h2>
+      <p>
+        Wyslij wiadomosc e-mail z adresu przypisanego do konta na adres:
+        <strong>dawid.michalowicz@hotmail.com</strong>.
+      </p>
+      <a class="cta" href="mailto:dawid.michalowicz@hotmail.com?subject=Prosba%20o%20usuniecie%20konta%20Dieta%20Studencka">
+        Wyslij prosbe o usuniecie konta
+      </a>
+    </section>
+
+    <section>
+      <h2>2. Co podac w zgloszeniu</h2>
+      <ul>
+        <li>nazwa uzytkownika lub e-mail konta,</li>
+        <li>krotka informacja, ze prosisz o usuniecie konta i danych,</li>
+        <li>opcjonalnie: powod usuniecia konta.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>3. Zakres usuwanych danych</h2>
+      <p>
+        Po pozytywnej weryfikacji usuwane jest konto oraz dane powiazane z kontem,
+        w tym dane rodziny, planowania posilkow, list zakupow i ustawien powiadomien.
+      </p>
+    </section>
+
+    <section>
+      <h2>4. Usuniecie konta bezposrednio z aplikacji</h2>
+      <p>
+        Jesli masz dostep do konta, mozesz tez usunac konto bezposrednio przez API
+        po zalogowaniu: <code>POST /api/auth/me/delete/</code>.
+      </p>
+    </section>
+
+    <p class="meta">Data ostatniej aktualizacji: 2026-04-03</p>
+  </main>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<div class="dashboard">
+    <div class="dashboard-header">
+        <h1>Witaj, <%= user.first_name || user.username %>!</h1>
+        <p class="dashboard-subtitle">Zarządzaj swoimi posiłkami i rodziną</p>
+    </div>
+    
+    <div class="dashboard-grid">
+        <div class="dashboard-card">
+            <h3>Twoje dane</h3>
+            <div class="user-info">
+                <p><strong>Nazwa użytkownika:</strong> <%= user.username %></p>
+                <p><strong>Imię:</strong> <%= user.first_name %></p>
+                <% if (user.email) { %>
+                    <p><strong>Email:</strong> <%= user.email %></p>
+                <% } %>
+            </div>
+        </div>
+        
+        <div class="dashboard-card">
+            <h3>Rodzina</h3>
+            <% if (family && family.rodzina_id) { %>
+                <p>Jesteś członkiem rodziny: <strong><%= family.rodzina || 'Bez nazwy' %></strong></p>
+                <% if (family.is_founder) { %>
+                    <span class="badge badge-primary">Założyciel</span>
+                <% } %>
+                <div class="family-actions">
+                    <a href="#" class="btn btn-outline btn-sm">Zaproś członka</a>
+                </div>
+            <% } else { %>
+                <p>Nie jesteś jeszcze członkiem żadnej rodziny.</p>
+                <div class="family-actions">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="openCreateFamilyModal()">Utwórz rodzinę</button>
+                    <a href="#" class="btn btn-outline btn-sm">Dołącz do rodziny</a>
+                </div>
+            <% } %>
+        </div>
+        
+        <div class="dashboard-card">
+            <h3>Dieta</h3>
+            <% if (user.kalorycznosc) { %>
+                <p><strong>Kaloryczność:</strong> <%= user.czysta_kalorycznosc %> kcal</p>
+                <p><strong>Dieta:</strong> <%= user.dieta %></p>
+            <% } else { %>
+                <p>Nie wybrano jeszcze preferencji dietetycznych.</p>
+                <a href="/diets" class="btn btn-outline btn-sm">Przeglądaj diety</a>
+            <% } %>
+        </div>
+        
+        <div class="dashboard-card">
+            <h3>Szybkie akcje</h3>
+            <div class="quick-actions">
+                <a href="#" class="btn btn-outline btn-block">📅 Zaplanuj posiłek</a>
+                <a href="#" class="btn btn-outline btn-block">🛒 Stwórz listę zakupów</a>
+                <a href="#" class="btn btn-outline btn-block">📦 Sprawdź lodówkę</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal do tworzenia rodziny -->
+<div id="createFamilyModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeCreateFamilyModal()">&times;</span>
+        <h2>Utwórz nową rodzinę</h2>
+        <p class="modal-subtitle">Stwórz rodzinę i zaproś jej członków do wspólnego planowania posiłków</p>
+        <form method="POST" action="/create-family" class="family-form">
+            <div class="form-group">
+                <label for="family_name" class="form-label">Nazwa rodziny</label>
+                <input 
+                    type="text" 
+                    id="family_name" 
+                    name="family_name" 
+                    class="form-input" 
+                    placeholder="np. Rodzina Kowalskich" 
+                    required
+                    maxlength="100"
+                />
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-outline" onclick="closeCreateFamilyModal()">Anuluj</button>
+                <button type="submit" class="btn btn-primary">Utwórz rodzinę</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function openCreateFamilyModal() {
+        document.getElementById('createFamilyModal').style.display = 'block';
+        document.getElementById('family_name').focus();
+    }
+
+    function closeCreateFamilyModal() {
+        document.getElementById('createFamilyModal').style.display = 'none';
+    }
+
+    window.onclick = function(event) {
+        const modal = document.getElementById('createFamilyModal');
+        if (event.target == modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    document.getElementById('family_name')?.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            this.form.submit();
+        }
+    });
+</script>

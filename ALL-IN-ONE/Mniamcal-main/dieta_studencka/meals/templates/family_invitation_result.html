@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title }}</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at top, #f0f9ff 0%, #e2e8f0 50%, #cbd5e1 100%);
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      color: #0f172a;
+    }
+
+    .card {
+      width: min(560px, calc(100vw - 32px));
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    .ok {
+      background: #dcfce7;
+      color: #166534;
+      border: 1px solid #86efac;
+    }
+
+    .error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fca5a5;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.2;
+    }
+
+    p {
+      margin: 12px 0 0;
+      font-size: 16px;
+      line-height: 1.55;
+      color: #334155;
+    }
+
+    .actions {
+      margin-top: 22px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .button {
+      text-decoration: none;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 700;
+      font-size: 14px;
+      border: 1px solid #0f172a;
+      color: #0f172a;
+      background: #ffffff;
+    }
+
+    .button.primary {
+      background: #0f172a;
+      color: #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    {% if is_error %}
+      <span class="badge error">Blad</span>
+    {% else %}
+      <span class="badge ok">Sukces</span>
+    {% endif %}
+
+    <h1>{{ title }}</h1>
+    <p>{{ message }}</p>
+
+    <div class="actions">
+      <a class="button primary" href="{{ login_url|default:'/login/' }}">Przejdz do logowania</a>
+      <a class="button" href="/docs/redoc/">Zobacz API</a>
+    </div>
+  </main>
+</body>
+</html>

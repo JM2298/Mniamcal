@@ -1,0 +1,39 @@
+
+
+
+
+volumes:
+  postgres_data:
+  static_volume:   # <-- tu nic się nie zmienia, ale NAZWA będzie teraz faktycznie użyta
+
+networks:
+  webnet:
+
+services:
+
+  
+  nextjs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /app
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - npm run dev
+    
+    ports:
+      - "5001:5001"
+    environment:
+      PORT: 5001
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret_change_me}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+  
+    networks:
+      - webnet
+

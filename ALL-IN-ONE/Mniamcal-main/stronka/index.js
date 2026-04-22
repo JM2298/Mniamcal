@@ -1,0 +1,519 @@
+const express = require('express');
+const cookieParser = require('cookie-parser');
+const path = require('path');
+const axios = require('axios');
+const expressLayouts = require('express-ejs-layouts');
+const jwt = require('jsonwebtoken');
+require('dotenv').config();
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const API_BASE_URL = process.env.API_BASE_URL || 'http://web:8000';
+const BACKEND_PUBLIC_URL = process.env.BACKEND_PUBLIC_URL || 'http://localhost:8000';
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_jwt_secret_change_me';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1d';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const AUTH_COOKIE_NAME = 'auth_token';
+const INTERNAL_BACKEND_HOSTS = new Set(['web', 'django_web', 'nginx', 'django_nginx']);
+
+const BASE_COOKIE_OPTIONS = {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: IS_PRODUCTION
+};
+
+const AUTH_COOKIE_OPTIONS = {
+    ...BASE_COOKIE_OPTIONS,
+    maxAge: 24 * 60 * 60 * 1000
+};
+
+const FLASH_COOKIE_OPTIONS = {
+    ...BASE_COOKIE_OPTIONS,
+    maxAge: 30 * 1000
+};
+
+const setFlash = (res, type, message) => {
+    if (!message) {
+        return;
+    }
+
+    const cookieName = type === 'error' ? 'flash_error' : 'flash_success';
+    res.cookie(cookieName, message, FLASH_COOKIE_OPTIONS);
+};
+
+const clearFlash = (req, res) => {
+    if (req.cookies.flash_error) {
+        res.clearCookie('flash_error', BASE_COOKIE_OPTIONS);
+    }
+    if (req.cookies.flash_success) {
+        res.clearCookie('flash_success', BASE_COOKIE_OPTIONS);
+    }
+};
+
+const clearAuthCookie = (res) => {
+    res.clearCookie(AUTH_COOKIE_NAME, BASE_COOKIE_OPTIONS);
+};
+
+const createAuthToken = (accessToken, refreshToken, user) => jwt.sign({
+    accessToken,
+    refreshToken,
+    user: {
+        id: user?.id,
+        username: user?.username,
+        first_name: user?.first_name,
+        email: user?.email
+    }
+}, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+app.use(expressLayouts);
+app.set('layout', 'layout');
+
+app.use((req, res, next) => {
+    req.auth = null;
+
+    const authToken = req.cookies[AUTH_COOKIE_NAME];
+    if (authToken) {
+        try {
+            req.auth = jwt.verify(authToken, JWT_SECRET);
+        } catch (error) {
+            clearAuthCookie(res);
+        }
+    }
+
+    res.locals.user = req.auth?.user || null;
+    res.locals.error = req.cookies.flash_error || null;
+    res.locals.success = req.cookies.flash_success || null;
+    clearFlash(req, res);
+    next();
+});
+
+const requireAuth = (req, res, next) => {
+    if (!req.auth?.accessToken) {
+        setFlash(res, 'error', 'Musisz być zalogowany, aby uzyskać dostęp do tej strony.');
+        return res.redirect('/login');
+    }
+    next();
+};
+
+const apiClient = axios.create({
+    baseURL: API_BASE_URL,
+    headers: {
+        'Content-Type': 'application/json'
+    }
+});
+
+const authApiClient = (token) => axios.create({
+    baseURL: API_BASE_URL,
+    headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+    }
+});
+
+const RETRYABLE_NETWORK_ERRORS = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT']);
+
+const isRetryableNetworkError = (error) => (
+    !error.response && RETRYABLE_NETWORK_ERRORS.has(error.code)
+);
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const withBackendRetry = async (requestFactory, maxAttempts = 3) => {
+    let lastError;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+            return await requestFactory();
+        } catch (error) {
+            lastError = error;
+            if (!isRetryableNetworkError(error) || attempt === maxAttempts) {
+                throw error;
+            }
+            await sleep(300 * attempt);
+        }
+    }
+    throw lastError;
+};
+
+const normalizeMealImageUrl = (imageUrl) => {
+    if (!imageUrl) {
+        return null;
+    }
+
+    try {
+        if (imageUrl.startsWith('/')) {
+            return `${BACKEND_PUBLIC_URL}${imageUrl}`;
+        }
+
+        const parsedImageUrl = new URL(imageUrl);
+        if (!INTERNAL_BACKEND_HOSTS.has(parsedImageUrl.hostname)) {
+            return imageUrl;
+        }
+
+        const publicBackendUrl = new URL(BACKEND_PUBLIC_URL);
+        parsedImageUrl.protocol = publicBackendUrl.protocol;
+        parsedImageUrl.host = publicBackendUrl.host;
+        return parsedImageUrl.toString();
+    } catch (error) {
+        return imageUrl;
+    }
+};
+
+const normalizeMealsImages = (meals) => (
+    (meals || []).map((meal) => ({
+        ...meal,
+        zdjecie_url: normalizeMealImageUrl(meal?.zdjecie_url)
+    }))
+);
+
+app.get('/', (req, res) => {
+    if (req.auth?.accessToken) {
+        return res.redirect('/dashboard');
+    }
+    res.render('index', { title: 'Witaj w Mniamcal' });
+});
+
+app.get('/diets', async (req, res) => {
+    try {
+        const selectedDietId = parseInt(req.query.diet_id) || null;
+        const selectedCaloriesId = parseInt(req.query.calories_id) || null;
+        const mealsPage = parseInt(req.query.page) || 1;
+        
+        const dietsResponse = await apiClient.get('/api/diets/');
+        const diets = dietsResponse.data.results || dietsResponse.data;
+        
+        // Pobierz wszystkie kaloryczności (z paginacją)
+        let calories = [];
+        let caloriesPage = 1;
+        let hasMoreCalories = true;
+        
+        while (hasMoreCalories) {
+            try {
+                const caloriesResponse = await apiClient.get(`/api/diets/calories/?page=${caloriesPage}`);
+                const pageCalories = caloriesResponse.data.results || [];
+                calories = calories.concat(pageCalories);
+                hasMoreCalories = !!caloriesResponse.data.next;
+                caloriesPage++;
+            } catch (error) {
+                console.error(`Error fetching calories page ${caloriesPage}:`, error.message);
+                hasMoreCalories = false;
+            }
+        }
+        
+        console.log(`Pobrano łącznie ${calories.length} kaloryczności`);
+        
+        let dietsWithData = [];
+        let selectedDietData = null;
+        
+        // Jeśli wybrana jest konkretna dieta, pobierz jej posiłki z paginacją
+        if (selectedDietId) {
+            const selectedDiet = diets.find(d => d.id === selectedDietId);
+            if (selectedDiet) {
+                try {
+                    // Jeśli wybrana kaloryczność, filtruj po niej
+                    let mealsUrl = `/api/diets/meals/?dieta-id=${selectedDietId}&page=${mealsPage}`;
+                    if (selectedCaloriesId) {
+                        mealsUrl += `&kalorycznosc-diety-id=${selectedCaloriesId}`;
+                    }
+                    
+                    const mealsResponse = await apiClient.get(mealsUrl);
+                    const dietMeals = normalizeMealsImages(mealsResponse.data.results || []);
+                    const hasNextPage = !!mealsResponse.data.next;
+                    const hasPreviousPage = !!mealsResponse.data.previous;
+                    
+                    const dietCalories = calories.filter(cal => cal.dieta_id === selectedDietId);
+                    
+                    selectedDietData = {
+                        ...selectedDiet,
+                        calories: dietCalories,
+                        meals: dietMeals,
+                        currentPage: mealsPage,
+                        hasNextPage,
+                        hasPreviousPage,
+                        nextPage: mealsPage + 1,
+                        previousPage: mealsPage - 1,
+                        selectedCaloriesId
+                    };
+                    
+                    const caloriesText = selectedCaloriesId ? ` (kaloryczność id=${selectedCaloriesId})` : '';
+                    console.log(`Dieta "${selectedDiet.dieta}" (id=${selectedDietId})${caloriesText}, strona ${mealsPage}: ${dietMeals.length} posiłków`);
+                } catch (error) {
+                    console.error(`Error fetching meals for diet ${selectedDietId}:`, error.message);
+                }
+            }
+        }
+        
+        // Pobierz pierwsze strony dla każdej diety (dla sidebar)
+        dietsWithData = await Promise.all(
+            diets.map(async (diet) => {
+                try {
+                    const dietCalories = calories.filter(cal => cal.dieta_id === diet.id);
+                    
+                    // Pobierz posiłki TYLKO dla tej diety (strona 1)
+                    const mealsResponse = await apiClient.get(`/api/diets/meals/?dieta-id=${diet.id}&page=1`);
+                    const dietMeals = normalizeMealsImages(mealsResponse.data.results || []);
+                    
+                    return {
+                        ...diet,
+                        calories: dietCalories,
+                        meals: dietMeals
+                    };
+                } catch (error) {
+                    console.error(`Error fetching meals for diet ${diet.id}:`, error.message);
+                    return {
+                        ...diet,
+                        calories: [],
+                        meals: []
+                    };
+                }
+            })
+        );
+        
+        // Jeśli nic nie zostało wybrane, wybierz pierwsze
+        if (!selectedDietData && dietsWithData.length > 0) {
+            const firstDiet = diets[0];
+            try {
+                const mealsResponse = await apiClient.get(`/api/diets/meals/?dieta-id=${firstDiet.id}&page=1`);
+                const dietMeals = normalizeMealsImages(mealsResponse.data.results || []);
+                const dietCalories = calories.filter(cal => cal.dieta_id === firstDiet.id);
+                
+                selectedDietData = {
+                    ...firstDiet,
+                    calories: dietCalories,
+                    meals: dietMeals,
+                    currentPage: 1,
+                    hasNextPage: !!mealsResponse.data.next,
+                    hasPreviousPage: false,
+                    nextPage: 2,
+                    previousPage: 0
+                };
+                console.log(`Dieta "${firstDiet.dieta}" (domyślna), strona 1: ${dietMeals.length} posiłków`);
+            } catch (error) {
+                console.error(`Error fetching meals for default diet ${firstDiet.id}:`, error.message);
+                const firstDietFromData = dietsWithData[0];
+                selectedDietData = {
+                    ...firstDietFromData,
+                    currentPage: 1,
+                    hasNextPage: false,
+                    hasPreviousPage: false
+                };
+            }
+        }
+        
+        res.render('diets', { 
+            title: 'Lista Diet',
+            diets: dietsWithData,
+            selectedDiet: selectedDietData,
+            isAuthenticated: !!req.auth?.accessToken
+        });
+    } catch (error) {
+        console.error('Diets error:', error.response?.data || error.message);
+        setFlash(res, 'error', 'Błąd podczas ładowania listy diet');
+        res.render('diets', { 
+            title: 'Lista Diet',
+            diets: [],
+            selectedDiet: null,
+            isAuthenticated: !!req.auth?.accessToken,
+            error: 'Nie udało się wczytać listy diet'
+        });
+    }
+});
+
+app.get('/login', (req, res) => {
+    if (req.auth?.accessToken) {
+        return res.redirect('/dashboard');
+    }
+    res.render('login', { title: 'Logowanie' });
+});
+
+app.post('/login', async (req, res) => {
+    const { username, password } = req.body;
+    
+    try {
+        const response = await withBackendRetry(() => apiClient.post('/api/auth/login/', {
+            username,
+            password
+        }));
+        
+        if (response.data.access) {
+            const userResponse = await withBackendRetry(() => authApiClient(response.data.access).get('/api/auth/me/'));
+            const userData = userResponse.data.results?.[0] || userResponse.data;
+            const authToken = createAuthToken(response.data.access, response.data.refresh, userData);
+            
+            res.cookie(AUTH_COOKIE_NAME, authToken, AUTH_COOKIE_OPTIONS);
+            setFlash(res, 'success', 'Zalogowano pomyślnie!');
+            return res.redirect('/dashboard');
+        }
+            
+        setFlash(res, 'error', 'Nie udało się zalogować użytkownika.');
+        res.redirect('/login');
+    } catch (error) {
+        console.error('Login error:', error.response?.data || error.message);
+        setFlash(res, 'error', error.response?.data?.detail || 'Nieprawidłowa nazwa użytkownika lub hasło');
+        res.redirect('/login');
+    }
+});
+
+app.get('/register', (req, res) => {
+    if (req.auth?.accessToken) {
+        return res.redirect('/dashboard');
+    }
+    res.render('register', { title: 'Rejestracja' });
+});
+
+app.post('/register', async (req, res) => {
+    const { username, first_name, email, password, password_confirm } = req.body;
+    
+    if (password !== password_confirm) {
+        setFlash(res, 'error', 'Hasła nie są identyczne');
+        return res.redirect('/register');
+    }
+    
+    try {
+        const response = await withBackendRetry(() => apiClient.post('/api/auth/register/', {
+            username,
+            first_name,
+            email,
+            password
+        }));
+        
+        if (response.data.access) {
+            let userData = { username, first_name, email };
+
+            try {
+                const userResponse = await withBackendRetry(() => authApiClient(response.data.access).get('/api/auth/me/'));
+                userData = userResponse.data.results?.[0] || userResponse.data || userData;
+            } catch (profileError) {
+                console.warn('Register profile fetch warning:', profileError.response?.data || profileError.message);
+            }
+
+            const authToken = createAuthToken(response.data.access, response.data.refresh, userData);
+
+            res.cookie(AUTH_COOKIE_NAME, authToken, AUTH_COOKIE_OPTIONS);
+            setFlash(res, 'success', 'Rejestracja zakończona sukcesem!');
+            return res.redirect('/dashboard');
+        }
+
+        setFlash(res, 'error', 'Nie udało się zarejestrować użytkownika.');
+        res.redirect('/register');
+    } catch (error) {
+        console.error('Register error:', error.response?.data || error.message);
+        
+        let errorMessage = 'Błąd podczas rejestracji';
+        if (error.response?.data) {
+            if (typeof error.response.data === 'object') {
+                const errors = [];
+                Object.entries(error.response.data).forEach(([key, value]) => {
+                    errors.push(`${key}: ${value}`);
+                });
+                errorMessage = errors.join(', ');
+            } else {
+                errorMessage = error.response.data.detail || errorMessage;
+            }
+        }
+        
+        setFlash(res, 'error', errorMessage);
+        res.redirect('/register');
+    }
+});
+
+app.get('/logout', (req, res) => {
+    clearAuthCookie(res);
+    clearFlash(req, res);
+    res.redirect('/');
+});
+
+app.get('/dashboard', requireAuth, async (req, res) => {
+    try {
+        const api = authApiClient(req.auth.accessToken);
+        
+        const userResponse = await api.get('/api/auth/me/');
+        const userData = userResponse.data.results?.[0] || userResponse.data;
+        
+        let familyData = null;
+        try {
+            const familyResponse = await api.get('/api/families/members/');
+            const memberData = familyResponse.data;
+            if (memberData && memberData.rodzina_id) {
+                familyData = {
+                    rodzina_id: memberData.rodzina_id,
+                    rodzina: memberData.rodzina,
+                    is_founder: memberData.members?.[0]?.is_founder || false
+                };
+            }
+        } catch (error) {
+            console.log('Użytkownik nie ma jeszcze rodziny');
+        }
+        
+        res.render('dashboard', {
+            title: 'Dashboard',
+            user: userData,
+            family: familyData
+        });
+    } catch (error) {
+        console.error('Dashboard error:', error.response?.data || error.message);
+        
+        if (error.response?.status === 401) {
+            clearAuthCookie(res);
+            setFlash(res, 'error', 'Sesja wygasła, zaloguj się ponownie');
+            return res.redirect('/login');
+        }
+        
+        setFlash(res, 'error', 'Błąd podczas ładowania dashboardu');
+        res.render('dashboard', { title: 'Dashboard', user: req.auth?.user || null, family: null });
+    }
+});
+
+app.post('/create-family', requireAuth, async (req, res) => {
+    const { family_name } = req.body;
+
+    if (!family_name || family_name.trim() === '') {
+        setFlash(res, 'error', 'Nazwa rodziny nie może być pusta');
+        return res.redirect('/dashboard');
+    }
+
+    try {
+        const api = authApiClient(req.auth.accessToken);
+        
+        const response = await api.post('/api/families/', {
+            rodzina: family_name.trim()
+        });
+
+        if (response.status === 201 || response.status === 200) {
+            setFlash(res, 'success', `Rodzina "${family_name}" została utworzona!`);
+            return res.redirect('/dashboard');
+        }
+
+        setFlash(res, 'error', 'Nie udało się utworzyć rodziny');
+        res.redirect('/dashboard');
+    } catch (error) {
+        console.error('Create family error:', error.response?.data || error.message);
+        
+        if (error.response?.status === 401) {
+            clearAuthCookie(res);
+            setFlash(res, 'error', 'Sesja wygasła, zaloguj się ponownie');
+            return res.redirect('/login');
+        }
+
+        let errorMessage = 'Błąd podczas tworzenia rodziny';
+        if (error.response?.data?.rodzina) {
+            errorMessage = error.response.data.rodzina[0] || errorMessage;
+        } else if (error.response?.data?.detail) {
+            errorMessage = error.response.data.detail;
+        }
+
+        setFlash(res, 'error', errorMessage);
+        res.redirect('/dashboard');
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`Strona działa na http://localhost:${PORT}`);
+    console.log(`API URL: ${API_BASE_URL}`);
+});

@@ -1,0 +1,39 @@
+<div class="auth-container">
+    <div class="auth-card">
+        <h1 class="auth-title">Zarejestruj się</h1>
+        <p class="auth-subtitle">Utwórz konto i zacznij planować posiłki</p>
+        
+        <form action="/register" method="POST" class="auth-form">
+            <div class="form-group">
+                <label for="username" class="form-label">Nazwa użytkownika *</label>
+                <input type="text" id="username" name="username" class="form-input" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="first_name" class="form-label">Imię *</label>
+                <input type="text" id="first_name" name="first_name" class="form-input" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="email" class="form-label">Email (opcjonalnie)</label>
+                <input type="email" id="email" name="email" class="form-input">
+            </div>
+            
+            <div class="form-group">
+                <label for="password" class="form-label">Hasło * (min. 8 znaków)</label>
+                <input type="password" id="password" name="password" class="form-input" minlength="8" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="password_confirm" class="form-label">Potwierdź hasło *</label>
+                <input type="password" id="password_confirm" name="password_confirm" class="form-input" minlength="8" required>
+            </div>
+            
+            <button type="submit" class="btn btn-primary btn-block">Zarejestruj się</button>
+        </form>
+        
+        <div class="auth-footer">
+            Masz już konto? <a href="/login">Zaloguj się</a>
+        </div>
+    </div>
+</div>
