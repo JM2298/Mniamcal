@@ -102,6 +102,79 @@ type FamilyMembersResponse = {
   detail?: string;
 };
 
+type PlannedMealResponse = {
+  data?: string;
+  czy_zjedzone?: boolean;
+  pora_posilku?: string;
+  rodzina_id?: number;
+  liczba_czlonkow_rodziny?: number;
+  liczba_osob_przy_posilku?: number;
+  zaplanowane_posilki?: Array<{
+    uzytkownik_id: number;
+    uzytkownik_w_rodzinie_id: number;
+    posilek_w_diecie_id: number;
+    kalorycznosc_diety?: number | null;
+    proporcja_kaloryczna?: number;
+  }>;
+  detail?: string;
+};
+
+type ShoppingListSummary = {
+  id: number;
+  nazwa_listy_zakupow: string;
+  data_od: string;
+  data_do: string;
+  liczba_pozycji_na_liscie: number;
+};
+
+type ShoppingListCreateResponse = {
+  lista_zakupow_id?: number;
+  nazwa_listy_zakupow?: string;
+  rodzina_id?: number;
+  data_od?: string;
+  data_do?: string;
+  liczba_zaplanowanych_posilkow?: number;
+  liczba_pozycji_na_liscie?: number;
+  detail?: string;
+};
+
+type WarehouseProduct = {
+  produkt_id: number;
+  nazwa_produktu: string;
+  ilosc_produktu: number;
+};
+
+type WarehouseResponse = {
+  rodzina_id?: number;
+  liczba_pozycji?: number;
+  produkty?: WarehouseProduct[];
+  detail?: string;
+};
+
+type WarehouseCoverageResponse = {
+  total_planned_meals?: number;
+  covered_meals?: number;
+  uncovered_meals?: number;
+  coverage_percent?: number;
+  detail?: string;
+};
+
+type PossibleMeal = {
+  posilek_w_diecie_id: number;
+  nazwa_posilku: string;
+  pora_posilku?: string;
+  czas_przygotowania?: string;
+  liczba_skladnikow?: number;
+  coverage_percent?: number;
+  can_prepare?: boolean;
+};
+
+type PossibleMealsResponse = {
+  liczba_mozliwych_posilkow?: number;
+  mozliwe_posilki?: PossibleMeal[];
+  detail?: string;
+};
+
 const tabs: Array<{ key: TabKey; label: string }> = [
   { key: "tablica", label: "TABLICA" },
   { key: "diety", label: "DIETY" },
@@ -154,6 +227,26 @@ export default function DashboardPage() {
     czystaKalorycznosc: "",
     sortowanieCena: "",
   });
+  const [plannedMealDate, setPlannedMealDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [plannedMealId, setPlannedMealId] = useState("");
+  const [planningMeal, setPlanningMeal] = useState(false);
+  const [calendarMessage, setCalendarMessage] = useState("");
+  const [createdPlannedMeal, setCreatedPlannedMeal] = useState<PlannedMealResponse | null>(null);
+  const [shoppingListFromDate, setShoppingListFromDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [shoppingListToDate, setShoppingListToDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [shoppingListName, setShoppingListName] = useState("");
+  const [creatingShoppingList, setCreatingShoppingList] = useState(false);
+  const [shoppingMessage, setShoppingMessage] = useState("");
+  const [shoppingLists, setShoppingLists] = useState<ShoppingListSummary[]>([]);
+  const [shoppingListsLoading, setShoppingListsLoading] = useState(false);
+  const [shoppingListsError, setShoppingListsError] = useState("");
+  const [warehouse, setWarehouse] = useState<WarehouseResponse | null>(null);
+  const [warehouseCoverage, setWarehouseCoverage] = useState<WarehouseCoverageResponse | null>(null);
+  const [possibleMeals, setPossibleMeals] = useState<PossibleMeal[]>([]);
+  const [warehouseLoading, setWarehouseLoading] = useState(false);
+  const [warehouseMessage, setWarehouseMessage] = useState("");
+  const [warehouseProductId, setWarehouseProductId] = useState("");
+  const [warehouseProductAmount, setWarehouseProductAmount] = useState("");
   const mealsPageSize = 10;
 
   const backendApiBaseUrl = useMemo(() => getBackendApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL), []);
@@ -200,6 +293,38 @@ export default function DashboardPage() {
 
   const dietCaloriesUrl = useMemo(() => {
     return buildBackendApiUrl("/api/diets/calories/", backendApiBaseUrl);
+  }, [backendApiBaseUrl]);
+
+  const calendarPlannedMealsUrl = useMemo(() => {
+    return buildBackendApiUrl("/api/calendar/family-planned-meals/", backendApiBaseUrl);
+  }, [backendApiBaseUrl]);
+
+  const shoppingListsUrl = useMemo(() => {
+    return buildBackendApiUrl("/api/shopping-lists/", backendApiBaseUrl);
+  }, [backendApiBaseUrl]);
+
+  const shoppingListFromCalendarUrl = useMemo(() => {
+    return buildBackendApiUrl("/api/shopping-lists/from-calendar/", backendApiBaseUrl);
+  }, [backendApiBaseUrl]);
+
+  const warehouseUrl = useMemo(() => {
+    return buildBackendApiUrl("/api/warehouse/", backendApiBaseUrl);
+  }, [backendApiBaseUrl]);
+
+  const warehouseCoverageUrl = useMemo(() => {
+    return buildBackendApiUrl("/api/warehouse/meal-coverage/", backendApiBaseUrl);
+  }, [backendApiBaseUrl]);
+
+  const warehousePossibleMealsUrl = useMemo(() => {
+    return buildBackendApiUrl("/api/warehouse/possible-meals/", backendApiBaseUrl);
+  }, [backendApiBaseUrl]);
+
+  const warehouseClearUrl = useMemo(() => {
+    return buildBackendApiUrl("/api/warehouse/clear/", backendApiBaseUrl);
+  }, [backendApiBaseUrl]);
+
+  const warehouseUpdateProductUrl = useMemo(() => {
+    return buildBackendApiUrl("/api/warehouse/update-product/", backendApiBaseUrl);
   }, [backendApiBaseUrl]);
 
   const redirectToLogin = useCallback(() => {
@@ -639,6 +764,83 @@ export default function DashboardPage() {
     selectedDietId,
   ]);
 
+  const refreshShoppingLists = useCallback(async () => {
+    setShoppingListsLoading(true);
+    setShoppingListsError("");
+
+    try {
+      const response = await fetchWithAuth(shoppingListsUrl);
+      const payload = (await response.json()) as ShoppingListSummary[] | { detail?: string; CODE?: string };
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          setShoppingLists([]);
+          return;
+        }
+        throw new Error(!Array.isArray(payload) && payload.detail ? payload.detail : `Backend zwrocil HTTP ${response.status}.`);
+      }
+
+      setShoppingLists(Array.isArray(payload) ? payload : []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nie udalo sie pobrac list zakupow.";
+      setShoppingListsError(message);
+    } finally {
+      setShoppingListsLoading(false);
+    }
+  }, [fetchWithAuth, shoppingListsUrl]);
+
+  useEffect(() => {
+    if (activeTab !== "lista-zakupow") {
+      return;
+    }
+
+    void refreshShoppingLists();
+  }, [activeTab, refreshShoppingLists]);
+
+  const refreshWarehouse = useCallback(async () => {
+    setWarehouseLoading(true);
+    setWarehouseMessage("");
+
+    try {
+      const [warehouseResponse, coverageResponse, possibleMealsResponse] = await Promise.all([
+        fetchWithAuth(warehouseUrl),
+        fetchWithAuth(warehouseCoverageUrl),
+        fetchWithAuth(warehousePossibleMealsUrl),
+      ]);
+
+      const warehousePayload = (await warehouseResponse.json()) as WarehouseResponse;
+      const coveragePayload = (await coverageResponse.json()) as WarehouseCoverageResponse;
+      const possibleMealsPayload = (await possibleMealsResponse.json()) as PossibleMealsResponse;
+
+      if (!warehouseResponse.ok) {
+        if (warehouseResponse.status === 404) {
+          setWarehouse(null);
+          setWarehouseCoverage(null);
+          setPossibleMeals([]);
+          return;
+        }
+        throw new Error(warehousePayload.detail || `Magazyn zwrocil HTTP ${warehouseResponse.status}.`);
+      }
+
+      setWarehouse(warehousePayload);
+      setWarehouseCoverage(coverageResponse.ok ? coveragePayload : null);
+      setPossibleMeals(possibleMealsResponse.ok ? possibleMealsPayload.mozliwe_posilki ?? [] : []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nie udalo sie pobrac magazynu.";
+      setWarehouseMessage(message);
+    } finally {
+      setWarehouseLoading(false);
+    }
+  }, [fetchWithAuth, warehouseCoverageUrl, warehousePossibleMealsUrl, warehouseUrl]);
+
+  useEffect(() => {
+    if (activeTab !== "magazyn") {
+      return;
+    }
+
+    void refreshWarehouse();
+  }, [activeTab, refreshWarehouse]);
+
   const saveNotificationPreference = async () => {
     setSavingNotifications(true);
     setAccountMessage("");
@@ -851,6 +1053,132 @@ export default function DashboardPage() {
     }
   };
 
+  const planFamilyMeal = async () => {
+    setPlanningMeal(true);
+    setCalendarMessage("");
+    setCreatedPlannedMeal(null);
+
+    try {
+      if (!plannedMealDate) {
+        throw new Error("Wybierz date posilku.");
+      }
+      if (!plannedMealId.trim()) {
+        throw new Error("Podaj posilek_w_diecie_id.");
+      }
+
+      const response = await fetchWithAuth(calendarPlannedMealsUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: plannedMealDate,
+          posilek_w_diecie_id: Number(plannedMealId),
+        }),
+      });
+
+      const payload = (await response.json()) as PlannedMealResponse;
+      if (!response.ok) {
+        throw new Error(payload.detail || `Backend zwrocil HTTP ${response.status}.`);
+      }
+
+      setCreatedPlannedMeal(payload);
+      setCalendarMessage("Posilek zostal dodany do kalendarza rodziny.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nie udalo sie zaplanowac posilku.";
+      setCalendarMessage(message);
+    } finally {
+      setPlanningMeal(false);
+    }
+  };
+
+  const createShoppingListFromCalendar = async () => {
+    setCreatingShoppingList(true);
+    setShoppingMessage("");
+
+    try {
+      if (!shoppingListFromDate || !shoppingListToDate) {
+        throw new Error("Wybierz zakres dat.");
+      }
+
+      const response = await fetchWithAuth(shoppingListFromCalendarUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data_od: shoppingListFromDate,
+          data_do: shoppingListToDate,
+          nazwa_listy_zakupow: shoppingListName.trim(),
+        }),
+      });
+
+      const payload = (await response.json()) as ShoppingListCreateResponse;
+      if (!response.ok) {
+        throw new Error(payload.detail || `Backend zwrocil HTTP ${response.status}.`);
+      }
+
+      setShoppingMessage(
+        `Utworzono liste '${payload.nazwa_listy_zakupow || shoppingListName || "Lista zakupow"}' z ${
+          payload.liczba_pozycji_na_liscie ?? 0
+        } pozycjami.`,
+      );
+      setShoppingListName("");
+      await refreshShoppingLists();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nie udalo sie utworzyc listy zakupow.";
+      setShoppingMessage(message);
+    } finally {
+      setCreatingShoppingList(false);
+    }
+  };
+
+  const clearWarehouse = async () => {
+    setWarehouseMessage("");
+
+    try {
+      const response = await fetchWithAuth(warehouseClearUrl, { method: "POST" });
+      const payload = (await response.json()) as { detail?: string; deleted_entries?: number };
+      if (!response.ok) {
+        throw new Error(payload.detail || `Backend zwrocil HTTP ${response.status}.`);
+      }
+
+      setWarehouseMessage(`Magazyn wyczyszczony. Usunieto pozycji: ${payload.deleted_entries ?? 0}.`);
+      await refreshWarehouse();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nie udalo sie wyczyscic magazynu.";
+      setWarehouseMessage(message);
+    }
+  };
+
+  const updateWarehouseProduct = async () => {
+    setWarehouseMessage("");
+
+    try {
+      if (!warehouseProductId.trim()) {
+        throw new Error("Podaj produkt_id.");
+      }
+      if (!warehouseProductAmount.trim()) {
+        throw new Error("Podaj ilosc produktu.");
+      }
+
+      const response = await fetchWithAuth(warehouseUpdateProductUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          produkt_id: Number(warehouseProductId),
+          ilosc_produktu: Number(warehouseProductAmount),
+        }),
+      });
+      const payload = (await response.json()) as { detail?: string; nazwa_produktu?: string; ilosc_produktu?: number };
+      if (!response.ok) {
+        throw new Error(payload.detail || `Backend zwrocil HTTP ${response.status}.`);
+      }
+
+      setWarehouseMessage(`Zaktualizowano ${payload.nazwa_produktu || `produkt #${warehouseProductId}`}.`);
+      await refreshWarehouse();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nie udalo sie zaktualizowac magazynu.";
+      setWarehouseMessage(message);
+    }
+  };
+
   const saveUserDietPreference = async () => {
     setSavingUserDiet(true);
     setAccountMessage("");
@@ -928,13 +1256,13 @@ export default function DashboardPage() {
       case "diety":
         return "Po lewej masz liste diet, a w centrum posilki z backendu po 10 na strone.";
       case "kalendarz":
-        return "Tutaj bedzie kalendarz posilkow i zaplanowanych zdarzen.";
+        return "Planowanie posilkow rodziny na wskazany dzien.";
       case "lista-zakupow":
-        return "Tutaj bedzie lista zakupow do odhaczenia.";
+        return "Generowanie i podglad list zakupow z kalendarza.";
       case "magazyn":
-        return "Tutaj bedzie stan magazynu produktow.";
+        return "Stan lodowki rodziny, pokrycie posilkow i aktualizacja ilosci.";
       case "konto":
-        return "Tutaj bedzie profil konta i ustawienia uzytkownika.";
+        return "Profil konta, ustawienia, dieta uzytkownika i zarzadzanie rodzina.";
       default:
         return "";
     }
@@ -1367,6 +1695,251 @@ export default function DashboardPage() {
                   <p className="mt-3 text-sm text-slate-600">Uzytkownik nie nalezy jeszcze do zadnej rodziny.</p>
                 )
               ) : null}
+            </div>
+          ) : null}
+
+          {activeTab === "kalendarz" ? (
+            <div className="mt-6 grid gap-4 lg:grid-cols-[360px_1fr]">
+              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-semibold text-slate-800">Dodaj posilek do kalendarza</p>
+                <p className="mt-1 text-xs text-slate-600">
+                  Uzyj `posilek_w_diecie_id` z zakladki Diety. Dla obiadu backend planuje wpisy dla calej rodziny.
+                </p>
+
+                <label className="mt-4 block text-xs font-semibold text-slate-700">Data</label>
+                <input
+                  type="date"
+                  value={plannedMealDate}
+                  onChange={(event) => setPlannedMealDate(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+
+                <label className="mt-3 block text-xs font-semibold text-slate-700">posilek_w_diecie_id</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={plannedMealId}
+                  onChange={(event) => setPlannedMealId(event.target.value)}
+                  placeholder="np. 12717"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+
+                <button
+                  type="button"
+                  onClick={planFamilyMeal}
+                  disabled={planningMeal}
+                  className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {planningMeal ? "Planowanie..." : "Zaplanuj posilek"}
+                </button>
+
+                {calendarMessage ? <p className="mt-3 text-sm text-slate-700">{calendarMessage}</p> : null}
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-sm font-semibold text-slate-800">Ostatnia odpowiedz kalendarza</p>
+                {createdPlannedMeal ? (
+                  <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                    <p>Data: {createdPlannedMeal.data || "-"}</p>
+                    <p>Pora posilku: {createdPlannedMeal.pora_posilku || "-"}</p>
+                    <p>Liczba osob przy posilku: {createdPlannedMeal.liczba_osob_przy_posilku ?? "-"}</p>
+                    <p>Zaplanowane wpisy: {createdPlannedMeal.zaplanowane_posilki?.length ?? 0}</p>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-600">Brak nowego wpisu w tej sesji.</p>
+                )}
+              </section>
+            </div>
+          ) : null}
+
+          {activeTab === "lista-zakupow" ? (
+            <div className="mt-6 grid gap-4 lg:grid-cols-[360px_1fr]">
+              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-semibold text-slate-800">Generuj z kalendarza</p>
+
+                <label className="mt-4 block text-xs font-semibold text-slate-700">Data od</label>
+                <input
+                  type="date"
+                  value={shoppingListFromDate}
+                  onChange={(event) => setShoppingListFromDate(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+
+                <label className="mt-3 block text-xs font-semibold text-slate-700">Data do</label>
+                <input
+                  type="date"
+                  value={shoppingListToDate}
+                  onChange={(event) => setShoppingListToDate(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+
+                <label className="mt-3 block text-xs font-semibold text-slate-700">Nazwa listy</label>
+                <input
+                  type="text"
+                  value={shoppingListName}
+                  onChange={(event) => setShoppingListName(event.target.value)}
+                  placeholder="np. Zakupy na tydzien"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+
+                <button
+                  type="button"
+                  onClick={createShoppingListFromCalendar}
+                  disabled={creatingShoppingList}
+                  className="mt-4 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {creatingShoppingList ? "Generowanie..." : "Utworz liste zakupow"}
+                </button>
+
+                {shoppingMessage ? <p className="mt-3 text-sm text-slate-700">{shoppingMessage}</p> : null}
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-800">Listy zakupow rodziny</p>
+                  <button
+                    type="button"
+                    onClick={() => void refreshShoppingLists()}
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                  >
+                    Odswiez
+                  </button>
+                </div>
+
+                {shoppingListsLoading ? <p className="mt-3 text-sm text-slate-600">Ladowanie list...</p> : null}
+                {shoppingListsError ? <p className="mt-3 text-sm font-semibold text-red-700">{shoppingListsError}</p> : null}
+
+                {!shoppingListsLoading && !shoppingListsError ? (
+                  shoppingLists.length ? (
+                    <div className="mt-3 grid gap-2">
+                      {shoppingLists.map((list) => (
+                        <article key={list.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-sm font-semibold text-slate-900">{list.nazwa_listy_zakupow}</p>
+                          <p className="mt-1 text-xs text-slate-600">
+                            {list.data_od} - {list.data_do}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-700">Pozycji: {list.liczba_pozycji_na_liscie}</p>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm text-slate-600">Brak list zakupow dla rodziny.</p>
+                  )
+                ) : null}
+              </section>
+            </div>
+          ) : null}
+
+          {activeTab === "magazyn" ? (
+            <div className="mt-6 grid gap-4 lg:grid-cols-[360px_1fr]">
+              <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-semibold text-slate-800">Aktualizuj produkt w magazynie</p>
+
+                <label className="mt-4 block text-xs font-semibold text-slate-700">produkt_id</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={warehouseProductId}
+                  onChange={(event) => setWarehouseProductId(event.target.value)}
+                  placeholder="np. 630"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+
+                <label className="mt-3 block text-xs font-semibold text-slate-700">Ilosc produktu</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={warehouseProductAmount}
+                  onChange={(event) => setWarehouseProductAmount(event.target.value)}
+                  placeholder="0 usuwa produkt"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={updateWarehouseProduct}
+                    className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+                  >
+                    Zapisz ilosc
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearWarehouse}
+                    className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-800"
+                  >
+                    Wyczysc magazyn
+                  </button>
+                </div>
+
+                {warehouseMessage ? <p className="mt-3 text-sm text-slate-700">{warehouseMessage}</p> : null}
+              </section>
+
+              <section className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-slate-800">Magazyn rodziny</p>
+                  <button
+                    type="button"
+                    onClick={() => void refreshWarehouse()}
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                  >
+                    Odswiez
+                  </button>
+                </div>
+
+                {warehouseLoading ? <p className="mt-3 text-sm text-slate-600">Ladowanie magazynu...</p> : null}
+
+                {!warehouseLoading ? (
+                  <>
+                    <div className="mt-3 grid gap-3 md:grid-cols-3">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs text-slate-600">Pozycji</p>
+                        <p className="mt-1 text-lg font-semibold">{warehouse?.liczba_pozycji ?? 0}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs text-slate-600">Pokrycie posilkow</p>
+                        <p className="mt-1 text-lg font-semibold">{warehouseCoverage?.coverage_percent ?? 0}%</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-xs text-slate-600">Mozliwe posilki</p>
+                        <p className="mt-1 text-lg font-semibold">{possibleMeals.length}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-2">
+                      {warehouse?.produkty?.length ? (
+                        warehouse.produkty.map((product) => (
+                          <article key={product.produkt_id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <p className="text-sm font-semibold text-slate-900">{product.nazwa_produktu}</p>
+                            <p className="mt-1 text-xs text-slate-700">
+                              produkt_id: {product.produkt_id} | ilosc: {product.ilosc_produktu}
+                            </p>
+                          </article>
+                        ))
+                      ) : (
+                        <p className="text-sm text-slate-600">Magazyn jest pusty.</p>
+                      )}
+                    </div>
+
+                    {possibleMeals.length ? (
+                      <div className="mt-5">
+                        <p className="text-sm font-semibold text-slate-800">Posilki mozliwe z lodowki</p>
+                        <div className="mt-2 grid gap-2">
+                          {possibleMeals.slice(0, 5).map((meal) => (
+                            <article key={meal.posilek_w_diecie_id} className="rounded-lg border border-slate-200 bg-white p-3">
+                              <p className="text-sm font-semibold">{meal.nazwa_posilku}</p>
+                              <p className="mt-1 text-xs text-slate-600">
+                                {meal.pora_posilku || "brak pory"} | pokrycie: {meal.coverage_percent ?? 0}%
+                              </p>
+                            </article>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                ) : null}
+              </section>
             </div>
           ) : null}
 

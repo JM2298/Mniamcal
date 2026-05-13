@@ -15,7 +15,7 @@ function shouldRewriteToApiBaseHost(host: string): boolean {
 }
 
 function normalizedApiBase(rawApiBaseUrl?: string): URL {
-  const fallback = "https://dieta-backend.michalowicz.dev/";
+  const fallback = "http://localhost:8000/";
   const candidate = (rawApiBaseUrl || fallback).trim() || fallback;
   const parsed = new URL(candidate);
 

@@ -2,16 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  createUserWithEmailAndPassword,
-  GoogleAuthProvider,
-  signInWithEmailAndPassword,
-  signInWithPopup,
-  updateProfile,
-} from "firebase/auth";
 
 import { buildBackendApiUrl, getBackendApiBaseUrl, resolveBackendAssetUrl } from "@/lib/backend-asset-url";
-import { getFirebaseAuth } from "@/lib/firebase-client";
 
 type BackendResponse = {
   CODE?: string;
@@ -35,7 +27,6 @@ type MealPreview = {
   dieta_id: number;
   nazwa_posilku: string;
   zdjecie_url?: string | null;
-  pory_posilku?: string;
   pora_posilku?: string;
   czas_przygotowania?: string;
   kalorie?: string;
@@ -65,13 +56,6 @@ async function parseBackendResponse(apiResponse: Response): Promise<BackendRespo
 
 function toUserFriendlyErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error) {
-    if (
-      err.message.includes("Unexpected token")
-      || err.message.includes("is not valid JSON")
-      || err.message.includes("Backend zwrocil nie-JSON")
-    ) {
-      return "Logowanie chwilowo niedostepne: backend zwraca niepoprawna odpowiedz. Sprawdz konfiguracje Firebase na serwerze backend.";
-    }
     return err.message;
   }
   return fallback;
@@ -82,6 +66,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [response, setResponse] = useState<BackendResponse | null>(null);
+  const [username, setUsername] = useState("");
   const [firstName, setFirstName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -92,8 +77,12 @@ export default function Home() {
 
   const backendApiBaseUrl = useMemo(() => getBackendApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL), []);
 
-  const backendUrl = useMemo(() => {
-    return buildBackendApiUrl("/api/auth/login/firebase/", backendApiBaseUrl);
+  const loginUrl = useMemo(() => {
+    return buildBackendApiUrl("/api/auth/login/", backendApiBaseUrl);
+  }, [backendApiBaseUrl]);
+
+  const registerUrl = useMemo(() => {
+    return buildBackendApiUrl("/api/auth/register/", backendApiBaseUrl);
   }, [backendApiBaseUrl]);
 
   const tokenRefreshUrl = useMemo(() => {
@@ -160,61 +149,40 @@ export default function Home() {
     };
   }, [dietsUrl, dietMealsUrl]);
 
-  const exchangeTokenWithBackend = async (idToken: string) => {
-    const apiResponse = await fetch(backendUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id_token: idToken }),
-    });
-
-    const payload = await parseBackendResponse(apiResponse);
-    setResponse(payload);
-
-    if (!apiResponse.ok) {
-      throw new Error(payload.detail || `Backend zwrocil HTTP ${apiResponse.status}.`);
-    }
-
+  const persistTokens = (payload: BackendResponse) => {
     if (payload.access) {
       localStorage.setItem("access_token", payload.access);
     }
     if (payload.refresh) {
       localStorage.setItem("refresh_token", payload.refresh);
     }
-
-    router.push("/dashboard");
   };
 
-  const onGoogleLogin = async () => {
+  const onLogin = async () => {
     setLoading(true);
     setError("");
 
     try {
-      const auth = getFirebaseAuth();
-      const provider = new GoogleAuthProvider();
-      const credential = await signInWithPopup(auth, provider);
-      const idToken = await credential.user.getIdToken();
-      await exchangeTokenWithBackend(idToken);
-    } catch (err) {
-      const message = toUserFriendlyErrorMessage(err, "Nieznany blad logowania.");
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const onEmailPasswordLogin = async () => {
-    setLoading(true);
-    setError("");
-
-    try {
-      if (!email || !password) {
-        throw new Error("Podaj email i haslo.");
+      const trimmedUsername = username.trim();
+      if (!trimmedUsername || !password) {
+        throw new Error("Podaj nazwe uzytkownika i haslo.");
       }
 
-      const auth = getFirebaseAuth();
-      const credential = await signInWithEmailAndPassword(auth, email, password);
-      const idToken = await credential.user.getIdToken(true);
-      await exchangeTokenWithBackend(idToken);
+      const apiResponse = await fetch(loginUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: trimmedUsername, password }),
+      });
+
+      const payload = await parseBackendResponse(apiResponse);
+      setResponse(payload);
+
+      if (!apiResponse.ok) {
+        throw new Error(payload.detail || `Backend zwrocil HTTP ${apiResponse.status}.`);
+      }
+
+      persistTokens(payload);
+      router.push("/dashboard");
     } catch (err) {
       const message = toUserFriendlyErrorMessage(err, "Nieznany blad logowania.");
       setError(message);
@@ -223,21 +191,37 @@ export default function Home() {
     }
   };
 
-  const onEmailPasswordRegister = async () => {
+  const onRegister = async () => {
     setLoading(true);
     setError("");
 
     try {
+      const trimmedUsername = username.trim();
       const trimmedFirstName = firstName.trim();
-      if (!trimmedFirstName || !email || !password) {
-        throw new Error("Podaj imie, email i haslo.");
+      if (!trimmedUsername || !trimmedFirstName || !password) {
+        throw new Error("Podaj nazwe uzytkownika, imie i haslo.");
       }
 
-      const auth = getFirebaseAuth();
-      const credential = await createUserWithEmailAndPassword(auth, email, password);
-      await updateProfile(credential.user, { displayName: trimmedFirstName });
-      const idToken = await credential.user.getIdToken(true);
-      await exchangeTokenWithBackend(idToken);
+      const apiResponse = await fetch(registerUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: trimmedUsername,
+          first_name: trimmedFirstName,
+          email: email.trim(),
+          password,
+        }),
+      });
+
+      const payload = await parseBackendResponse(apiResponse);
+      setResponse(payload);
+
+      if (!apiResponse.ok) {
+        throw new Error(payload.detail || `Backend zwrocil HTTP ${apiResponse.status}.`);
+      }
+
+      persistTokens(payload);
+      router.push("/dashboard");
     } catch (err) {
       const message = toUserFriendlyErrorMessage(err, "Nieznany blad rejestracji.");
       setError(message);
@@ -270,12 +254,7 @@ export default function Home() {
         throw new Error(payload.detail || `Backend zwrocil HTTP ${apiResponse.status}.`);
       }
 
-      if (payload.access) {
-        localStorage.setItem("access_token", payload.access);
-      }
-      if (payload.refresh) {
-        localStorage.setItem("refresh_token", payload.refresh);
-      }
+      persistTokens(payload);
     } catch (err) {
       const message = toUserFriendlyErrorMessage(err, "Nieznany blad odswiezania tokenu.");
       setError(message);
@@ -287,20 +266,30 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-slate-50 p-6 text-slate-900">
       <section className="mx-auto mt-8 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-semibold">Logowanie Firebase (Google)</h1>
+        <h1 className="text-2xl font-semibold">Logowanie do backendu</h1>
         <p className="mt-2 text-sm text-slate-600">
-          Ta strona loguje uzytkownika przez Firebase i wysyla ID token do backendu Django.
+          Logowanie i rejestracja odbywaja sie bezposrednio przez endpointy backendu Django (bez Google).
         </p>
 
         <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-          Endpoint backendu: {backendUrl}
+          Endpoint logowania: {loginUrl}
+        </div>
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+          Endpoint rejestracji: {registerUrl}
         </div>
         <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
           Endpoint odswiezania: {tokenRefreshUrl}
         </div>
 
         <div className="mt-5 grid gap-3 rounded-lg border border-slate-200 bg-white p-4">
-          <p className="text-sm font-semibold text-slate-800">Logowanie email + haslo (Firebase Auth)</p>
+          <p className="text-sm font-semibold text-slate-800">Dane logowania</p>
+          <input
+            type="text"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder="Nazwa uzytkownika"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          />
           <input
             type="text"
             value={firstName}
@@ -312,7 +301,7 @@ export default function Home() {
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            placeholder="email@example.com"
+            placeholder="email@example.com (opcjonalny przy logowaniu)"
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
           />
           <input
@@ -325,33 +314,24 @@ export default function Home() {
 
           <button
             type="button"
-            onClick={onEmailPasswordLogin}
+            onClick={onLogin}
             disabled={loading}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading ? "Logowanie..." : "Zaloguj email/haslo"}
+            {loading ? "Logowanie..." : "Zaloguj"}
           </button>
 
           <button
             type="button"
-            onClick={onEmailPasswordRegister}
+            onClick={onRegister}
             disabled={loading}
             className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading ? "Rejestracja..." : "Zarejestruj email/haslo"}
+            {loading ? "Rejestracja..." : "Zarejestruj"}
           </button>
         </div>
 
-        <div className="mt-5 flex gap-3 flex-wrap">
-          <button
-            type="button"
-            onClick={onGoogleLogin}
-            disabled={loading}
-            className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading ? "Logowanie..." : "Zaloguj przez Google"}
-          </button>
-
+        <div className="mt-5 flex flex-wrap gap-3">
           <button
             type="button"
             onClick={onRefreshAccessToken}
