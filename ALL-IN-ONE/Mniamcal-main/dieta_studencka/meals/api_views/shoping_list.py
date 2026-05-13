@@ -30,6 +30,7 @@ from meals.serializers.shoping_list import (
 	FamilyShoppingListDeleteResponseSerializer,
 	FamilyShoppingListMarkBoughtResponseSerializer,
 	FamilyShoppingListMarkBoughtSerializer,
+	FamilyShoppingListReadDetailSerializer,
 	FamilyShoppingListSummarySerializer,
 )
 from meals.services.shopping_list_realtime import emit_live_shopping_list_update
@@ -602,6 +603,17 @@ class FamilyShoppingListFromCalendarCreateViewSet(mixins.CreateModelMixin, views
 			503: ApiErrorSerializer,
 		},
 	),
+	retrieve=extend_schema(
+		tags=['lista-zakupow'],
+		summary='Szczegoly listy zakupow',
+		description='Zwraca wskazana liste zakupow rodziny wraz z wymaganymi produktami.',
+		responses={
+			200: FamilyShoppingListReadDetailSerializer,
+			401: ApiErrorSerializer,
+			404: ApiErrorSerializer,
+			503: ApiErrorSerializer,
+		},
+	),
 	destroy=extend_schema(
 		tags=['lista-zakupow'],
 		summary='Usuniecie listy zakupow',
@@ -614,7 +626,12 @@ class FamilyShoppingListFromCalendarCreateViewSet(mixins.CreateModelMixin, views
 		},
 	),
 )
-class FamilyShoppingListReadViewSet(mixins.ListModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet):
+class FamilyShoppingListReadViewSet(
+	mixins.ListModelMixin,
+	mixins.RetrieveModelMixin,
+	mixins.DestroyModelMixin,
+	viewsets.GenericViewSet,
+):
 	permission_classes = [IsAuthenticated]
 	serializer_class = FamilyShoppingListSummarySerializer
 	http_method_names = ['get', 'delete']
@@ -705,6 +722,56 @@ class FamilyShoppingListReadViewSet(mixins.ListModelMixin, mixins.DestroyModelMi
 			},
 			status=status.HTTP_200_OK,
 		)
+
+	def retrieve(self, request, *args, **kwargs):
+		family, error_response = self._resolve_family_or_error(request.user)
+		if error_response is not None:
+			return error_response
+
+		shopping_list = (
+			ProjektInflacjaMobileListazakupowrodziny.objects
+			.select_related('rodzina')
+			.filter(id=kwargs.get('pk'), rodzina_id=family.id)
+			.first()
+		)
+		if shopping_list is None:
+			return Response(
+				{'CODE': 'SHOPPING_LIST_NOT_FOUND', 'detail': 'Nie znaleziono wskazanej listy zakupow.'},
+				status=status.HTTP_404_NOT_FOUND,
+			)
+
+		list_products = list(
+			ProjektInflacjaMobileProduktynalisciezakupowrodziny.objects
+			.select_related('nazwa_produktu', 'kolejnosc_kategorii_w_sklepie__kategoria_produktu')
+			.filter(lista_zakupow_id=shopping_list.id)
+			.order_by('kolejnosc_kategorii_w_sklepie__kolejnosc', 'nazwa_produktu__nazwa_produktu')
+		)
+
+		output_products = []
+		for product in list_products:
+			category = getattr(product.kolejnosc_kategorii_w_sklepie, 'kategoria_produktu', None)
+			output_products.append(
+				{
+					'produkt_id': product.nazwa_produktu_id,
+					'nazwa_produktu': getattr(product.nazwa_produktu, 'nazwa_produktu', ''),
+					'ilosc_produktu_do_kupienia': product.ilosc_produktu_do_kupienia,
+					'kolejnosc_kategorii': getattr(product.kolejnosc_kategorii_w_sklepie, 'kolejnosc', None),
+					'kategoria_nazwa': getattr(category, 'nazwa_kategorii', None),
+					'ostatnia_wielkosc_opakowania': None,
+					'jednostka_ostatniego_opakowania': None,
+				}
+			)
+
+		output = {
+			'id': shopping_list.id,
+			'nazwa_listy_zakupow': shopping_list.nazwa_listy_zakupow,
+			'rodzina_id': family.id,
+			'data_od': shopping_list.data_od,
+			'data_do': shopping_list.data_do,
+			'liczba_pozycji_na_liscie': len(output_products),
+			'produkty': output_products,
+		}
+		return Response(output, status=status.HTTP_200_OK)
 
 
 @extend_schema_view(
@@ -884,5 +951,4 @@ class FamilyShoppingListMarkBoughtViewSet(mixins.CreateModelMixin, viewsets.Gene
 			},
 			status=status.HTTP_200_OK,
 		)
-
 

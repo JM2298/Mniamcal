@@ -27,6 +27,25 @@ class FamilyPlannedMealResponseSerializer(serializers.Serializer):
 	zaplanowane_posilki = FamilyPlannedMealMemberSerializer(many=True)
 
 
+class FamilyPlannedMealListItemSerializer(serializers.Serializer):
+	planned_meal_id = serializers.IntegerField()
+	posilek_w_diecie_id = serializers.IntegerField(allow_null=True)
+	data = serializers.DateField()
+	posilek = serializers.CharField()
+	pora_posilku = serializers.CharField(allow_blank=True)
+	czy_zjedzone = serializers.BooleanField()
+	uzytkownik_id = serializers.IntegerField(allow_null=True)
+	uzytkownik_w_rodzinie_id = serializers.IntegerField(allow_null=True)
+
+
+class FamilyPlannedMealListResponseSerializer(serializers.Serializer):
+	rodzina_id = serializers.IntegerField()
+	data_od = serializers.DateField(allow_null=True)
+	data_do = serializers.DateField(allow_null=True)
+	count = serializers.IntegerField()
+	zaplanowane_posilki = FamilyPlannedMealListItemSerializer(many=True)
+
+
 class FamilyMealPossibleRatingSerializer(serializers.Serializer):
 	id = serializers.IntegerField()
 	ocena = serializers.CharField()

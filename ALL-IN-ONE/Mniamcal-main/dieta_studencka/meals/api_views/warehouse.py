@@ -11,7 +11,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from meals.api_views.shoping_list import _ensure_family_membership_for_shopping
-from meals.models import ProjektInflacjaMobileMagazynwszystkichuzytkownikowrodziny, ProjektInflacjaMobileProduktywposilku, ProjektInflacjaMobileZaplanowaneposilkirodziny
+from meals.models import (
+	ProjektInflacjaMobileMagazynwszystkichuzytkownikowrodziny,
+	ProjektInflacjaMobileProduktyuproszczone,
+	ProjektInflacjaMobileProduktywposilku,
+	ProjektInflacjaMobileZaplanowaneposilkirodziny,
+)
 from meals.serializers import ApiErrorSerializer
 from meals.serializers.warehouse import FamilyWarehouseClearResponseSerializer, FamilyWarehouseListResponseSerializer, FamilyWarehouseMealCoverageResponseSerializer, FamilyWarehousePossibleMealsResponseSerializer, FamilyWarehouseUpdateProductResponseSerializer, FamilyWarehouseUpdateProductSerializer
 
@@ -420,6 +425,34 @@ class FamilyWarehouseReadViewSet(mixins.ListModelMixin, viewsets.GenericViewSet)
 			)
 			.first()
 		)
+
+		if warehouse_product is None and target_amount > 0:
+			simplified_product = ProjektInflacjaMobileProduktyuproszczone.objects.filter(id=product_id).first()
+			if simplified_product is None:
+				return Response(
+					{
+						'CODE': 'WAREHOUSE_PRODUCT_NOT_FOUND',
+						'detail': 'Nie znaleziono produktu o podanym produkt_id.',
+					},
+					status=status.HTTP_404_NOT_FOUND,
+				)
+
+			warehouse_product = ProjektInflacjaMobileMagazynwszystkichuzytkownikowrodziny.objects.create(
+				rodzina_id=family.id,
+				nazwa_produktu_uproszczonego_id=product_id,
+				ilosc_produktu=target_amount,
+			)
+			product_name = getattr(simplified_product, 'nazwa_produktu_uproszczonego', '')
+			return Response(
+				{
+					'CODE': 'WAREHOUSE_PRODUCT_CREATED',
+					'detail': 'Dodano nowy produkt do lodowki rodziny.',
+					'produkt_id': product_id,
+					'nazwa_produktu': product_name,
+					'ilosc_produktu': round(target_amount, 2),
+				},
+				status=status.HTTP_200_OK,
+			)
 
 		if warehouse_product is None:
 			return Response(

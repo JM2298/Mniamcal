@@ -1,7 +1,9 @@
 """Kalendar API views category."""
 
 from django.db.utils import OperationalError, ProgrammingError
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, OpenApiTypes, extend_schema, extend_schema_view
+from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework import mixins, status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -18,7 +20,7 @@ from meals.models import (
 	ProjektInflacjaMobileUzytkownicywrodzinach,
 	ProjektInflacjaMobileZaplanowaneposilkirodziny,
 )
-from meals.serializers import ApiErrorSerializer, FamilyMealPossibleRatingsResponseSerializer, FamilyPlannedMealCreateSerializer, FamilyPlannedMealMarkEatenResponseSerializer, FamilyPlannedMealMarkEatenSerializer, FamilyPlannedMealRemoveResponseSerializer, FamilyPlannedMealRemoveSerializer, FamilyPlannedMealResponseSerializer
+from meals.serializers import ApiErrorSerializer, FamilyMealPossibleRatingsResponseSerializer, FamilyPlannedMealCreateSerializer, FamilyPlannedMealListResponseSerializer, FamilyPlannedMealMarkEatenResponseSerializer, FamilyPlannedMealMarkEatenSerializer, FamilyPlannedMealRemoveResponseSerializer, FamilyPlannedMealRemoveSerializer, FamilyPlannedMealResponseSerializer
 from rest_framework.decorators import action
 from meals.services.shopping_list_realtime import emit_live_shopping_list_updates_for_date
 
@@ -66,6 +68,35 @@ def _ensure_family_membership_for_planning(user):
 
 
 @extend_schema_view(
+	list=extend_schema(
+		tags=['kalendarz'],
+		summary='Lista zaplanowanych posilkow rodziny',
+		description=(
+			'Zwraca zaplanowane posilki rodziny aktualnie zalogowanego uzytkownika. '
+			'Parametry data_od i data_do pozwalaja ograniczyc zakres dat.'
+		),
+		parameters=[
+			OpenApiParameter(
+				name='data_od',
+				type=OpenApiTypes.DATE,
+				required=False,
+				description='Data poczatkowa (YYYY-MM-DD). Domyslnie dzisiejsza data.',
+			),
+			OpenApiParameter(
+				name='data_do',
+				type=OpenApiTypes.DATE,
+				required=False,
+				description='Data koncowa (YYYY-MM-DD).',
+			),
+		],
+		responses={
+			200: FamilyPlannedMealListResponseSerializer,
+			400: ApiErrorSerializer,
+			401: ApiErrorSerializer,
+			404: ApiErrorSerializer,
+			503: ApiErrorSerializer,
+		},
+	),
 	create=extend_schema(
 		tags=['kalendarz'],
 		summary='Dodanie posilku do zaplanowanych posilkow rodziny',
@@ -87,6 +118,88 @@ class FamilyPlannedMealCreateViewSet(mixins.CreateModelMixin, viewsets.GenericVi
 	permission_classes = [IsAuthenticated]
 	serializer_class = FamilyPlannedMealCreateSerializer
 	http_method_names = ['post', 'get']
+
+	def list(self, request, *args, **kwargs):
+		try:
+			_membership, family, context_error = _ensure_family_membership_for_planning(request.user)
+		except (ProgrammingError, OperationalError):
+			return Response(
+				{'CODE': 'FAMILY_CONTEXT_UNAVAILABLE', 'detail': 'Kontekst rodziny jest chwilowo niedostepny.'},
+				status=status.HTTP_503_SERVICE_UNAVAILABLE,
+			)
+
+		if context_error is not None:
+			return Response(
+				{'CODE': context_error['CODE'], 'detail': context_error['detail']},
+				status=context_error['status'],
+			)
+
+		data_od_param = request.query_params.get('data_od')
+		data_do_param = request.query_params.get('data_do')
+		data_od = parse_date(data_od_param) if data_od_param else None
+		data_do = parse_date(data_do_param) if data_do_param else None
+
+		if data_od_param and data_od is None:
+			return Response(
+				{'CODE': 'INVALID_DATE', 'detail': 'Niepoprawny format parametru data_od.'},
+				status=status.HTTP_400_BAD_REQUEST,
+			)
+		if data_do_param and data_do is None:
+			return Response(
+				{'CODE': 'INVALID_DATE', 'detail': 'Niepoprawny format parametru data_do.'},
+				status=status.HTTP_400_BAD_REQUEST,
+			)
+
+		if data_od is None:
+			data_od = timezone.localdate()
+
+		if data_do and data_do < data_od:
+			return Response(
+				{'CODE': 'INVALID_DATE_RANGE', 'detail': 'Parametr data_do nie moze byc wczesniejszy niz data_od.'},
+				status=status.HTTP_400_BAD_REQUEST,
+			)
+
+		planned_meals_qs = (
+			ProjektInflacjaMobileZaplanowaneposilkirodziny.objects
+			.filter(rodzina_id=family.id, data__gte=data_od)
+			.select_related(
+				'uzytkownik_w_rodzinie',
+				'posilki_w_diecie__nazwa_posilku',
+				'posilki_w_diecie__pora_posilku',
+			)
+		)
+		if data_do is not None:
+			planned_meals_qs = planned_meals_qs.filter(data__lte=data_do)
+
+		planned_meals = list(
+			planned_meals_qs.order_by('data', 'posilki_w_diecie__pora_posilku_id', 'id')
+		)
+
+		payload = []
+		for planned_meal in planned_meals:
+			payload.append(
+				{
+					'planned_meal_id': planned_meal.id,
+					'posilek_w_diecie_id': getattr(planned_meal, 'posilki_w_diecie_id', None),
+					'data': planned_meal.data,
+					'posilek': getattr(planned_meal.posilki_w_diecie.nazwa_posilku, 'nazwa_posilku', ''),
+					'pora_posilku': getattr(planned_meal.posilki_w_diecie.pora_posilku, 'pora_posilku', ''),
+					'czy_zjedzone': bool(planned_meal.czy_zjedzone),
+					'uzytkownik_id': getattr(planned_meal.uzytkownik_w_rodzinie, 'uzytkownik_id', None),
+					'uzytkownik_w_rodzinie_id': getattr(planned_meal.uzytkownik_w_rodzinie, 'id', None),
+				}
+			)
+
+		return Response(
+			{
+				'rodzina_id': family.id,
+				'data_od': data_od,
+				'data_do': data_do,
+				'count': len(payload),
+				'zaplanowane_posilki': payload,
+			},
+			status=status.HTTP_200_OK,
+		)
 
 	@staticmethod
 	def _resolve_numeric_calorie(diet_calorie):

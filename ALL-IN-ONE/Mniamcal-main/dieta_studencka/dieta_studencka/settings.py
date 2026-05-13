@@ -208,9 +208,29 @@ CHANNEL_LAYERS = {
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Dieta Studencka API',
-    'DESCRIPTION': 'Wspolny schemat OpenAPI dla wszystkich widokow ReDoc.',
+    'DESCRIPTION': 'Wspolny schemat OpenAPI dla wszystkich widokow i klientow.',
     'VERSION': '1.0.0',
+    'CONTACT': {
+        'name': 'Zespol Dieta Studencka',
+        'url': 'https://dieta.michalowicz.dev',
+    },
+    'LICENSE': {
+        'name': 'Proprietary',
+    },
+    'TERMS_OF_SERVICE': 'https://dieta.michalowicz.dev',
     'TAGS': [
+        {
+            'name': 'konto',
+            'description': 'Autoryzacja, profil i preferencje uzytkownika.',
+        },
+        {
+            'name': 'diety',
+            'description': 'Konfiguracja diet i planow zywieniowych.',
+        },
+        {
+            'name': 'rodzina',
+            'description': 'Zarzadzanie rodzina i zaproszeniami.',
+        },
         {
             'name': 'kalendarz',
             'description': 'Endpointy planowania posilkow rodzinnych.',
@@ -219,7 +239,29 @@ SPECTACULAR_SETTINGS = {
             'name': 'lista-zakupow',
             'description': 'Endpointy tworzenia i zarzadzania lista zakupow rodziny.',
         },
+        {
+            'name': 'magazyn',
+            'description': 'Zapasy domowe i produkty w magazynie.',
+        },
     ],
+    'COMPONENTS': {
+        'securitySchemes': {
+            'bearerAuth': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'bearerFormat': 'JWT',
+            },
+        },
+    },
+    'SECURITY': [
+        {
+            'bearerAuth': [],
+        },
+    ],
+    'SWAGGER_UI_SETTINGS': {
+        'persistAuthorization': True,
+        'displayRequestDuration': True,
+    },
 }
 email_backend_from_env = os.getenv("EMAIL_BACKEND")
 if email_backend_from_env:
